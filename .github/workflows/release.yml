@@ -20,7 +20,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-    name: Bibadac - Release - ${{ matrix.target }}
+    name: Legifrance-rs - Release - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -32,7 +32,7 @@ jobs:
       - name: Build release assets
         run: |
           cargo build --release --target ${{ matrix.target }}
-          tar -C target/${{ matrix.target }}/release/ -czvf bibadac-${{ matrix.target }}.tar.gz bibadac${{ runner.os == 'Windows' && '.exe' || '' }}
+          tar -C target/${{ matrix.target }}/release/ -czvf legifrance-rs-${{ matrix.target }}.tar.gz legifrance-rs${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Upload Release Assets
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v2
