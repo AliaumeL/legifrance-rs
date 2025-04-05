@@ -31,7 +31,7 @@ struct Cli {
     /// The list of tarballs to download,
     /// the default (empty) list will download all tarballs
     ///
-    #[clap(short, long, default_value = "")]
+    #[clap(short, long, num_args(0..))]
     fond: Vec<tarballs::Fond>,
 
     /// Whether to extract the tarballs
