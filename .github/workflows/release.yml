@@ -1,0 +1,45 @@
+name: Release Creation
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  github:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    name: Bibadac - Release - ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust Target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build release assets
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          tar -C target/${{ matrix.target }}/release/ -czvf bibadac-${{ matrix.target }}.tar.gz bibadac${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Upload Release Assets
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.tar.gz"
+      - name: Upload Artifacts
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v3
+        with:
+          path: "*.tar.gz"

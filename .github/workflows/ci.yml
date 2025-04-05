@@ -1,0 +1,22 @@
+name: Cargo Build & Test
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Bibadac - latest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Update Rust Toolchain
+        run: rustup update stable
+      - name: Build (verbose)
+        run: cargo build --verbose
+      - name: Run test suite
+        run: cargo test  --verbose
