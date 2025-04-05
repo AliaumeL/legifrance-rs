@@ -3,7 +3,11 @@ mod tarballs;
 use clap::Parser;
 
 use std::path::PathBuf;
-use anyhow::Result;
+use anyhow::{Result, Context};
+
+use indicatif::{ProgressBar, ProgressStyle};
+
+use log::warn;
 
 // implement ValueEnum for Fond
 use clap::ValueEnum;
@@ -77,24 +81,38 @@ fn extract_tarballs(idir: &PathBuf, odir: &PathBuf) -> Result<()> {
     let tbfiles = std::fs::read_dir(idir)
         .expect("Could not read directory for tarballs");
 
-    for p in tbfiles {
-        let p = p.unwrap().path();
-        // check the extension
-        let e = p.extension().and_then(|s| s.to_str()).unwrap_or("");
-        if e != "gz" {
-            continue;
-        }
+    let to_extract : Vec<_> = tbfiles
+        .into_iter()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path  = entry.path();
+            let name  = path.file_name()?.to_str()?;
+            let ext   = path.extension()?.to_str()?;
+            if path.is_file() && (ext == "tar.gz" || ext == "gz") {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        }).collect();
 
+    let pb = ProgressBar::new(to_extract.len() as u64);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} ({eta})")
+        .context("Error creating progress bar")?
+        .progress_chars("##-"));
+
+    for p in to_extract {
+        pb.set_message(format!("Extracting {}", p));
         let path = idir.join(p);
         if path.exists() {
-            println!("Extracting {:?}", path);
             match tarballs::extract_tarball(&path, &odir) {
                 Ok(_) => println!("Successfully extracted {:?}", path),
                 Err(e) => eprintln!("Error extracting {:?}: {}", path, e),
             }
         } else {
-            println!("Tarball {:?} does not exist", path);
+            warn!("Tarball {:?} does not exist", path);
         }
+        pb.inc(1);
     }
     Ok(())
 }
