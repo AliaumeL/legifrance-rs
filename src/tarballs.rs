@@ -350,8 +350,8 @@ pub fn init_tantivy(index_path: &PathBuf) -> Result<(
     Ok((index, IndexFields { path, body, year }))
 }
 
-fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<usize> {
-    let names : Vec<usize> = re.captures_iter(doc)
+fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<u64> {
+    let names : Vec<u64> = re.captures_iter(doc)
         .map(|cap| cap["year"].to_owned())
         .filter_map(|s| s.parse().ok())
         .take(1)
@@ -363,21 +363,33 @@ fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<usize> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct FondXMLFile {
+    path: String,
+    body: String,
+    year: u64,
+}
+
+fn parse_file(file: &PathBuf, 
+              re: &regex::Regex) -> Result<FondXMLFile> {
+    let body = std::fs::read_to_string(file)
+        .context("Could not open file")?;
+    let year = get_year_juri(&body, re)
+        .context(format!("Could not get year in {}", file.to_string_lossy()))?;
+    let path = file.to_string_lossy().to_string();
+    Ok(FondXMLFile { path, body, year })
+}
+
 /// Index a file in the tantivy index
 fn index_file(index_writer: &mut tantivy::IndexWriter, 
               fields:       &IndexFields,
-              re:           &regex::Regex,
-              file:         &PathBuf) -> Result<()> {
+              file:         FondXMLFile) -> Result<()> {
     let mut doc = tantivy::TantivyDocument::default();
-    let ctn = std::fs::read_to_string(file)
-        .context("Could not open file")?;
-    let year = get_year_juri(&ctn, re)
-        .context(format!("Could not get year in {}", file.to_string_lossy()))?;
-    doc.add_text(fields.path, file.to_string_lossy());
-    doc.add_text(fields.body, std::fs::read_to_string(file)?);
-    doc.add_u64(fields.year, year as u64);
+
+    doc.add_text(fields.path, file.path);
+    doc.add_text(fields.body, file.body);
+    doc.add_u64(fields.year,  file.year);
     index_writer.add_document(doc)?;
-    index_writer.commit()?;
     Ok(())
 }
 
@@ -409,17 +421,20 @@ pub fn index_files_in_dir(
         .progress_chars("##-"));
     pb.set_message(format!("Indexing {} files", files.len()));
 
-
     for file in files {
-        pb.inc(1);
-        match index_file(index_writer, fields, &re, &file) {
-            Ok(_) => {
-                pb.set_message(format!("Indexed {}", file.display()));
+        if let Ok(doc) = parse_file(&file, &re) {
+            match index_file(index_writer, fields, doc) {
+                Ok(_) => {
+                    pb.set_message(format!("Indexed {}", file.display()));
+                }
+                Err(e) => {
+                    warn!("Failed to index {}: {}", file.display(), e);
+                }
             }
-            Err(e) => {
-                warn!("Failed to index {}: {}", file.display(), e);
-            }
+        } else {
+            warn!("Failed to parse {}", file.display());
         }
+        pb.inc(1);
     }
     index_writer.commit()?;
     Ok(())
