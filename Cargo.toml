@@ -1,0 +1,32 @@
+[package]
+name = "dila-opendata-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Command line interface for Dila Open Datasets"
+license = "GPL-3.0-or-later"
+
+# add binary
+[[bin]]
+name = "dilarxiv"
+path = "src/dilarxiv.rs"
+
+[[bin]]
+name = "dilapi"
+path = "src/dilapi.rs"
+
+[dependencies]
+anyhow = "1.0.97"
+clap = { version = "4.5.35", features = ["derive"] }
+env_logger = "0.11.7"
+flate2 = "1.1.1"
+futures = "0.3.31"
+indicatif = { version = "0.17.11", features = ["tokio", "futures"] }
+log = "0.4.27"
+regex = "1.11.1"
+reqwest = { version = "0.12.15", features = ["stream"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
+tantivy = "0.22.0"
+tar = "0.4.44"
+tokio = { version = "1.44.1", features = ["full"] }
