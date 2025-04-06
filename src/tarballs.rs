@@ -298,6 +298,108 @@ pub fn search_in_dir(dir: &PathBuf,
 /// STEP 3 create the index
 /// using tantivy
 
+pub mod file_collector {
+
+    use std::io::Write;
+    use std::io::BufWriter;
+    use std::fs::OpenOptions;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    use tantivy::{DocId, Score, Result, SegmentOrdinal};
+    use tantivy::collector::Collector;
+    use tantivy::collector::SegmentCollector;
+    use tantivy::index::SegmentReader;
+    use tantivy::store::StoreReader;
+    use tantivy::schema::Field;
+    use tantivy::schema::{TantivyDocument, OwnedValue};
+
+
+    /// In order to write the list of all matches into
+    /// a file we will create our own Collector / SegmentCollector
+    /// that will buffer-write the results to a file
+    /// 
+    /// FileList collector is an empty struct used to implement the traits
+    pub struct FileListCollector {
+        path_field:     Field,
+        bufwriter:      FileCollectorFruit,
+    }
+
+    impl FileListCollector {
+        pub fn new(path_field: Field, file_path: &PathBuf) -> FileListCollector {
+            let file = OpenOptions::new()
+                .create(true)
+                .read(true)
+                .append(true)
+                .open(file_path)
+                .expect("could not open file");
+            let bufwriter = Arc::new(Mutex::new(BufWriter::new(file)));
+            FileListCollector { path_field,  bufwriter }
+        }
+    }
+
+    // this will be shared between all segments
+    // so we need to make sure that it is thread-safe
+    // and we need to use a Mutex to protect it
+    type FileCollectorFruit = Arc<Mutex<std::io::BufWriter<std::fs::File>>>;
+
+    pub struct FileListSegmentCollector {
+        path_field:     Field,
+        bufwriter:      FileCollectorFruit,
+        store_reader:   StoreReader,
+    }
+
+    impl SegmentCollector for FileListSegmentCollector {
+        type Fruit = ();
+
+        fn collect(&mut self, doc: DocId, _: Score) {
+            let doc : TantivyDocument = 
+                      self.store_reader.get(doc)
+                          .expect(format!("Could not get document {doc}").as_str());
+
+            match doc.get_first(self.path_field) {
+                Some(OwnedValue::Str(s)) => {
+                    let mut lock = self.bufwriter.lock()
+                        .expect("Unable to acquire lock");
+                    write!(lock, "{}\n", s)
+                        .expect("Unable to write to buffer");
+                }
+                _ => {
+                }
+            }
+        }
+
+        fn harvest(self) {
+            let mut lock = self.bufwriter.lock()
+                .expect("Unable to acquire lock");
+            lock.flush()
+                .expect("unable to flush buffer");
+        }
+    }
+
+    impl Collector for FileListCollector {
+        type Fruit = ();
+        type Child = FileListSegmentCollector;
+
+        fn requires_scoring(&self) -> bool { false }
+
+        fn for_segment(&self, 
+                       _: SegmentOrdinal,
+                       segment_reader: &SegmentReader) -> Result<Self::Child> {
+            let store = segment_reader.get_store_reader(100)?;
+            Ok(FileListSegmentCollector {
+                path_field: self.path_field,
+                bufwriter: self.bufwriter.clone(),
+                store_reader: store,
+            })
+        }
+
+        fn merge_fruits(&self, _: Vec<()>) -> Result<()> {
+            Ok(())
+        }
+    }
+}
+
 pub struct IndexFields {
     path: tantivy::schema::Field,
     body: tantivy::schema::Field,
@@ -441,9 +543,10 @@ pub fn index_files_in_dir(
 }
 
 /// search all files in the index 
-pub fn search_index(index: &tantivy::Index, 
+pub fn search_index(index : &tantivy::Index, 
                     fields: &IndexFields,
-                    query: &str) -> Result<(usize, Vec<(String,u64)>)> {
+                    save  : &Option<String>,
+                    query : &str) -> Result<(usize, Vec<(String,u64)>)> {
     use tantivy::schema::document::Value;
     let reader = index.reader_builder()
         .reload_policy(tantivy::ReloadPolicy::OnCommitWithDelay)
@@ -454,9 +557,23 @@ pub fn search_index(index: &tantivy::Index,
     let query = query_parser.parse_query(query)?;
     
     let (doc_count, top_docs) = 
-        searcher.search(&query, 
+        if let Some(savepath) = save {
+            let fpath = PathBuf::from(savepath);
+            let fcol = file_collector::FileListCollector::new(fields.path,
+                                                              &fpath);
+            let (d, t, _) =  searcher.search(&query, 
                         &(tantivy::collector::Count,
-                          tantivy::collector::TopDocs::with_limit(10)))?;
+                          tantivy::collector::TopDocs::with_limit(10),
+                          fcol
+                          ))?;
+            (d, t)
+        } else {
+            searcher.search(&query, 
+                        &(tantivy::collector::Count,
+                          tantivy::collector::TopDocs::with_limit(10),
+                          ))?
+        };
+
     let mut results = Vec::new();
     for (_, doc_address) in top_docs {
         let doc : tantivy::TantivyDocument = searcher.doc(doc_address)?;

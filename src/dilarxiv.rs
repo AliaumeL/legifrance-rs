@@ -168,7 +168,7 @@ async fn main() {
     }
 
     if let Some(query) = args.query {
-        match tarballs::search_index(&index, &flds, &query) {
+        match tarballs::search_index(&index, &flds, &args.save, &query) {
             Ok((count, results)) => {
                 println!("Found {} results for query '{}'", count, query);
                 for (path, year) in results {
