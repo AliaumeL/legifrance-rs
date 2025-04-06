@@ -32,7 +32,9 @@ jobs:
       - name: Build release assets
         run: |
           cargo build --release --target ${{ matrix.target }}
-          tar -C target/${{ matrix.target }}/release/ -czvf legifrance-rs-${{ matrix.target }}.tar.gz legifrance-rs${{ runner.os == 'Windows' && '.exe' || '' }}
+          tar -C target/${{ matrix.target }}/release/ -czvf legifrance-rs-${{ matrix.target }}.tar.gz \
+                 dilarxiv${{ runner.os == 'Windows' && '.exe' || '' }} \
+                 dilapi${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Upload Release Assets
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v2
