@@ -33,6 +33,8 @@ of the code (which is the most common way to refer to it in the decisions).
 **Note:** the JADE dataset, once extracted is about 8GB. The indexing takes
 about 10 minutes on a not-so-recent laptop, and the resulting index is about
 4GB. So to run the search, you need more than 12GB of free space on your disk.
+The estimated time to run the whole pipeline is about 20 minutes. After that,
+searches should feel instantaneous (way below 1 second).
 
 ## Usage
 
