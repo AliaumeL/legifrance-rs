@@ -2,14 +2,16 @@ mod tarballs;
 
 use clap::Parser;
 
+use anyhow::{Context, Result};
 use std::path::PathBuf;
-use anyhow::{Result, Context};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use log::warn;
+use log::{error, info, warn};
 
 // implement ValueEnum for Fond
+// so that it can be used in clap
+// (and the help message will show the list of possible tarballs)
 use clap::ValueEnum;
 impl ValueEnum for tarballs::Fond {
     fn value_variants<'a>() -> &'a [Self] {
@@ -49,7 +51,6 @@ struct Cli {
     /// Whether to save *all* the search results in a file
     #[clap(short, long)]
     save: Option<String>,
-
 }
 
 async fn get_tarballs(fonds: &[tarballs::Fond], dir: &PathBuf) -> Result<Vec<String>> {
@@ -59,7 +60,7 @@ async fn get_tarballs(fonds: &[tarballs::Fond], dir: &PathBuf) -> Result<Vec<Str
     let mut tarballs = Vec::new();
 
     for fond in fonds {
-        println!("Downloading tarballs for {}", fond);
+        info!("Downloading tarballs for {}", fond);
         let url = format!("{}/{}", tarballs::BASE_URL, fond);
         // Download the tarballs
         match tarballs::download_tarballs(&client, dir, &url).await {
@@ -67,7 +68,7 @@ async fn get_tarballs(fonds: &[tarballs::Fond], dir: &PathBuf) -> Result<Vec<Str
                 tarballs.extend(tarballs_list);
             }
             Err(e) => {
-                eprintln!("Error fetching tarballs: {}", e);
+                error!("Error fetching tarballs: {}", e);
                 continue;
             }
         }
@@ -78,36 +79,38 @@ async fn get_tarballs(fonds: &[tarballs::Fond], dir: &PathBuf) -> Result<Vec<Str
 
 fn extract_tarballs(idir: &PathBuf, odir: &PathBuf) -> Result<()> {
     // Extract all tarballs
-    let tbfiles = std::fs::read_dir(idir)
-        .expect("Could not read directory for tarballs");
+    let tbfiles = std::fs::read_dir(idir).expect("Could not read directory for tarballs");
 
-    let to_extract : Vec<_> = tbfiles
+    let to_extract: Vec<_> = tbfiles
         .into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
-            let path  = entry.path();
-            let name  = path.file_name()?.to_str()?;
-            let ext   = path.extension()?.to_str()?;
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let ext = path.extension()?.to_str()?;
             if path.is_file() && (ext == "tar.gz" || ext == "gz") {
                 Some(name.to_string())
             } else {
                 None
             }
-        }).collect();
+        })
+        .collect();
 
     let pb = ProgressBar::new(to_extract.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} ({eta})")
-        .context("Error creating progress bar")?
-        .progress_chars("##-"));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} ({eta})")
+            .context("Error creating progress bar")?
+            .progress_chars("##-"),
+    );
 
     for p in to_extract {
         pb.set_message(format!("Extracting {}", p));
         let path = idir.join(p);
         if path.exists() {
             match tarballs::extract_tarball(&path, &odir) {
-                Ok(_) => println!("Successfully extracted {:?}", path),
-                Err(e) => eprintln!("Error extracting {:?}: {}", path, e),
+                Ok(_) => info!("Successfully extracted {:?}", path),
+                Err(e) => error!("Error extracting {:?}: {}", path, e),
             }
         } else {
             warn!("Tarball {:?} does not exist", path);
@@ -117,31 +120,27 @@ fn extract_tarballs(idir: &PathBuf, odir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-
 #[tokio::main]
 async fn main() {
     // Initialize the logger
     env_logger::init();
 
-    // add to the help message the actual list of tarballs
-    // this is a bit of a hack
-    
     let args = Cli::parse();
 
-    let dir    = std::env::current_dir()
-        .expect("Failed to get current directory")
+    let cwd = std::env::current_dir()
+        .expect("Failed to get current directory");
+
+    let dir = cwd 
         .join("tarballs");
 
-    let edir = std::env::current_dir()
-        .expect("Failed to get current directory")
+    let edir = cwd 
         .join("extracted");
 
-    let index_path = std::env::current_dir()
-        .expect("Failed to get current directory")
+    let index_path = cwd
         .join("index");
+
     if !index_path.exists() {
-        std::fs::create_dir_all(&index_path)
-            .expect("Failed to create index directory");
+        std::fs::create_dir_all(&index_path).expect("Failed to create index directory");
     }
 
     if args.tarballs {
@@ -150,29 +149,22 @@ async fn main() {
         } else {
             &args.fond
         };
-        let _ = get_tarballs(fonds, &dir).await
+        let _ = get_tarballs(fonds, &dir)
+            .await
             .expect("Failed to get tarballs");
     }
 
     if args.extract {
-        extract_tarballs(&dir, &edir)
-            .expect("Could not extract all tarballs");
+        extract_tarballs(&dir, &edir).expect("Could not extract all tarballs");
     }
 
-
-    let (index, flds) = tarballs::init_tantivy(&index_path)
-        .expect("Failed to create index");
+    let (index, flds) = tarballs::init_tantivy(&index_path).expect("Failed to create index");
 
     if args.index {
-        println!("Creating index at {}", index_path.display());
+        info!("Creating index at {}", index_path.display());
 
-        let mut writer = index.writer(50_000_000)
-            .expect("Failed to create writer");
-
-        // index the files
-        tarballs::index_files_in_dir(&mut writer, &flds, &edir)
-            .expect("Failed to index files");
-
+        let mut writer = index.writer(50_000_000).expect("Failed to create writer");
+        tarballs::index_files_in_dir(&mut writer, &flds, &edir).expect("Failed to index files");
     }
 
     if let Some(query) = args.query {
@@ -183,7 +175,7 @@ async fn main() {
                     println!("Found: [{}] {}", year, path);
                 }
             }
-            Err(e) => eprintln!("Error searching index: {}", e),
+            Err(e) => error!("Error searching index: {}", e),
         }
     }
 }
