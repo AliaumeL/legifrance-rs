@@ -6,6 +6,34 @@ simple way. However, the datasets have terms of use that you must respect.
 Please refer to the [Dila website][donnees-juridiques] for more information on
 the terms of use of the datasets. 
 
+## Example 
+
+An example of usage is to find all the decisions concerning "CESEDA" (CESEDA is
+the code for the French Code of Entry and Stay of Foreigners and the Right of
+Asylum) in the *JADE* dataset (Jurisprudence administrative de l'État).
+
+```bash
+# Run this once to download, extract and index (slow)
+dilarxiv --tarballs --fond JADE --extract --index
+# Run this to search for CESEDA in the JADE dataset (fast)
+dilarxiv --query "CESEDA" --save result-list.txt
+```
+
+The command prints 10 results and saves the full list of results in a file
+called `result-list.txt`. Note that the above query is too precise to 
+get meaningful results and one should rather use the following command:
+
+```bash
+dilarxiv --query "CESEDA OR \"code de l'entrée et du séjour des étrangers et du droit d'asile\""
+```
+
+Which will return all the decisions concerning the CESEDA or the expanded name
+of the code (which is the most common way to refer to it in the decisions).
+
+**Note:** the JADE dataset, once extracted is about 8GB. The indexing takes
+about 10 minutes on a not-so-recent laptop, and the resulting index is about
+4GB. So to run the search, you need more than 12GB of free space on your disk.
+
 ## Usage
 
 This repository is a wrapper around two very different ways to interact with
@@ -69,7 +97,7 @@ actual list of all the results, you can use the `--save` option that will
 create a text file with one line per result.
 
 
-### Use the API
+### Use the API (not currently working)
 
 To use the API, you need to create an account on
 the [PISTE website][piste-api] that hosts the APIs. Following the
@@ -105,7 +133,11 @@ A relatively recent version of Rust is required to build the software.
 - [x] Download datasets
 - [x] Extract datasets
 - [x] Index datasets
+- [x] Assign a year to every decision
+- [ ] Assign a precise date to every decision
+- [ ] Somehow compute/find the `uid` used by legifrance in the documents
 - [x] Search in index
+- [ ] Allow for aggregation of results (date ranges, etc.)
 - [ ] Store results in a file
 - [x] Query using the API
 - [x] Store API results in (several) files
