@@ -5,6 +5,7 @@
 /// 4. Answer queries on the database like: what are the files
 ///    matching some fulltext query
 
+
 use anyhow::{Result, Context};
 use reqwest::Client;
 
@@ -63,6 +64,9 @@ impl std::fmt::Display for Fond {
         write!(f, "{}", self.as_str())
     }
 }
+
+
+
 
 /// List of tarballs in the dila server
 pub const FONDS : &[Fond] = &[
@@ -590,4 +594,79 @@ pub fn search_index(index : &tantivy::Index,
 
     }
     Ok((doc_count, results))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    const MOCK_CASS_CONTENT: &str = r#"
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231125-130812.tar.gz">CASS_20231125-130812.tar.gz</a>                 2023-11-25 15:04  261K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231127-204209.tar.gz">CASS_20231127-204209.tar.gz</a>                 2023-11-27 20:44  130K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231204-205306.tar.gz">CASS_20231204-205306.tar.gz</a>                 2023-12-04 20:55  145K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231211-211048.tar.gz">CASS_20231211-211048.tar.gz</a>                 2023-12-11 21:13  212K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231218-205651.tar.gz">CASS_20231218-205651.tar.gz</a>                 2023-12-18 20:59  311K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20240101-200918.tar.gz">CASS_20240101-200918.tar.gz</a>                 2024-01-01 20:10  408K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20240108-211850.tar.gz">CASS_20240108-211850.tar.gz</a>                 2024-01-08 21:22  165K  
+<img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20240115-204455.tar.gz">CASS_20240115-204455.tar.gz</a>                 2024-01-15 20:47  306K
+"#;
+
+
+    async fn setup_mock_server() -> MockServer {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/CASS"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(MOCK_CASS_CONTENT.to_string())
+                    .append_header("Content-Type", "text/html")
+            )
+            // Mounting the mock on the mock server - it's now effective!
+            .mount(&mock_server)
+            .await;
+
+        mock_server
+    }
+
+    #[test]
+    fn test_fond_as_str() {
+        for fond in FONDS {
+            let str = fond.as_str();
+            let fond2 = Fond::try_from(str.to_string());
+            assert!(fond2.is_ok());
+            assert_eq!(fond, &fond2.unwrap());
+        }
+    }
+
+
+    #[test]
+    fn test_get_tarballs_from_page_content() {
+        let tarballs = get_tarballs_from_page_content(MOCK_CASS_CONTENT);
+        assert_eq!(tarballs.len(), 8);
+        assert_eq!(tarballs[0], "CASS_20231125-130812.tar.gz");
+    }
+
+    #[test]
+    fn test_get_year_juri() {
+        let re = regex::Regex::new(r"(?<year>\d*)-\d*-\d*</DATE").unwrap();
+        let doc = r#"<DATE_JURI>2023-01-01</DATE_JURI>"#;
+        let year = get_year_juri(doc, &re).unwrap();
+        assert_eq!(year, 2023);
+    }
+
+    #[tokio::test]
+    async fn test_get_tarballs() {
+        let mock_server = setup_mock_server().await;
+        let url = format!("{}/{}", mock_server.uri(), Fond::CASS);
+        let client = Client::new();
+        let tarballs = get_tarballs(&client, &url).await.unwrap();
+        assert_eq!(tarballs.len(), 8);
+        assert_eq!(tarballs[0], "CASS_20231125-130812.tar.gz");
+    }
+
 }

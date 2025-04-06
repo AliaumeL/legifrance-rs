@@ -31,8 +31,12 @@ tantivy = "0.22.0"
 tar = "0.4.44"
 tokio = { version = "1.44.1", features = ["full"] }
 
+
 [profile.release]
 strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+[dev-dependencies]
+wiremock = "0.6.3"
