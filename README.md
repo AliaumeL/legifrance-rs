@@ -20,7 +20,7 @@ is better to download the datasets yourself.
 To download and index the datasets yourself use the following command:
 
 ```bash
-dilarxiv--tarballs 
+dilarxiv --tarballs 
 ```
 
 This will download *all* the datasets provided by the Dila. If you are
@@ -29,7 +29,7 @@ number of times) to specify the datasets you are interested in. For example, to
 download the *CASS* dataset, you can use the following command:
 
 ```bash
-dilarxiv--tarballs --fond CASS
+dilarxiv --tarballs --fond CASS
 ```
 
 Note that datasets are available on the [open data portal][dila-opendata] of
