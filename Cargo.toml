@@ -2,7 +2,7 @@
 name = "legifrance-rs"
 version = "0.0.1"
 edition = "2024"
-description = "Command line interface for Dila Open Datasets"
+description = "Command line interface for Dila Open Datasets and API"
 license = "GPL-3.0-or-later"
 
 # add binary
@@ -13,6 +13,10 @@ path = "src/dilarxiv.rs"
 [[bin]]
 name = "dilapi"
 path = "src/dilapi.rs"
+
+[lib]
+name = "legifrance"
+path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.97"
