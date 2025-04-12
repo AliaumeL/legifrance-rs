@@ -9,7 +9,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use log::{error, info, warn};
+use log::{error, info, warn, debug};
 
 use crate::api::piste::*;
 
@@ -158,13 +158,21 @@ impl From<&PageQuery> for SearchQuery {
             None
         };
 
+        let second_sort = if sort.is_none() { None } else { Some("ID".to_string()) };
+        let sort_facette = match &pq.fond {
+            Some(Fond::Cetat) => FilterType::DecisionDate,
+            Some(Fond::Juri)  => FilterType::SignatureDate,
+            Some(Fond::Jufi)  => FilterType::SignatureDate,
+            _ => FilterType::PublicationDate,
+        };
+
         let filters = if pq.start_year.is_some() && pq.end_year.is_some() {
             Some(vec![Filter {
                 dates: DateRange {
                     start: format!("{}-01-01", pq.start_year.unwrap()),
                     end: format!("{}-01-01", pq.end_year.unwrap()),
                 },
-                facette: FilterType::DecisionDate,
+                facette: sort_facette,
             }])
         } else {
             None
@@ -194,7 +202,7 @@ impl From<&PageQuery> for SearchQuery {
                 page_number: pq.page,
                 filters,
                 sort,
-                second_sort: Some("ID".to_string()),
+                second_sort,
             },
             fond,
         }
@@ -210,6 +218,7 @@ pub async fn get_search_result(
     pq:      &PageQuery,
 ) -> Result<SearchResponse> {
     let query: SearchQuery = pq.into();
+    debug!("Query: {:?}", query);
     let data = serde_json::to_string(&query)?;
 
     let response = aclient.post_json_request("/search", &data).await?;
