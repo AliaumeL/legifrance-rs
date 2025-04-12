@@ -25,7 +25,7 @@ pub const OAUTH_URL: &str = "https://oauth.piste.gouv.fr/api/oauth/token";
 pub const API_URL : &str = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app";
 
 /// All available fonds (datasets) in the API.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Fond {
     /// The official journal of the French Republic.

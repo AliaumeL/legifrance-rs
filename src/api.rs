@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{Write, BufWriter};
 use std::sync::{Arc, Mutex};
 
-use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use futures::stream::StreamExt;
 
 /// This is the module containing the datatypes
@@ -21,11 +21,13 @@ use client::{AuthenticatedClient,
              get_search_result,
              get_full_text};
 
-type SharedBufferedWriter = Arc<Mutex<BufWriter<File>>>;
+type SharedBufferedWriter<T> = Arc<Mutex<T>>;
 
-async fn get_page_and_write(aclient: &AuthenticatedClient,
-                             out:     SharedBufferedWriter,
-                             pq:      &PageQuery) -> Result<usize> {
+async fn get_page_and_write<T>(aclient: &AuthenticatedClient,
+                             out:     SharedBufferedWriter<T>,
+                             pq:      &PageQuery) -> Result<usize>
+where T: std::io::Write + std::marker::Send + 'static
+{
     let res = get_search_result(aclient, pq).await
         .context("Unable to serialize search result")?;
     let total = res.total_result_number;
@@ -118,7 +120,7 @@ fn compute_step_size(total: u64) -> usize {
     // and 100 results per page
     let max_results = 100 * 100;
     let step_size = (total as f64 / max_results as f64).ceil() as usize;
-    (step_size / 3).min(1) // to be extra safe
+    (step_size / 3).max(1) // to be extra safe divide by 3
 }
 
 /// Compute a probably correct list of queries
@@ -175,10 +177,12 @@ async fn compute_query_plan(aclient: &AuthenticatedClient,
     Ok((total, queries))
 }
 
-async fn store_all_to_file(aclient: &AuthenticatedClient,
-                           out:     SharedBufferedWriter,
+async fn store_all_to_file<T>(aclient: &AuthenticatedClient,
+                           out:     SharedBufferedWriter<T>,
                            bar:     &ProgressBar,
-                           pqs:     &[PageQuery]) -> Result<()> {
+                           pqs:     &[PageQuery]) -> Result<()>
+where T: std::io::Write + std::marker::Send + 'static
+{
 
     let stream = futures::stream::iter(pqs)
         .map(|pq| {
@@ -205,22 +209,13 @@ async fn store_all_to_file(aclient: &AuthenticatedClient,
     Ok(())
 }
 
-pub async fn call_search_endpoint(aclient: &AuthenticatedClient, 
-                                  dir    : &PathBuf,
-                                  pq     : &PageQuery) -> Result<()> {
-    // create the output directory if it does not exist
-    if !dir.exists() {
-        std::fs::create_dir_all(dir)
-            .context(format!("Unable to create directory {}", dir.display()))?;
-    }
-    // create the output file
-    let filename = format!("{}-{}.json", pq.text, pq.fond.as_ref().map(|x| x.as_str()).unwrap_or("all"));
-    let filepath = dir.join(filename);
-    let file = File::create(&filepath)
-        .context(format!("Unable to create file {}", filepath.display()))?;
-    info!("Writing results to {}", filepath.display());
-    let out = Arc::new(Mutex::new(BufWriter::new(file)));
-    
+pub async fn call_search_endpoint<T>(
+    aclient: &AuthenticatedClient, 
+    writer : T,
+    pq     : &PageQuery) -> Result<()>
+where T: std::io::Write + std::marker::Send + 'static
+{
+    let out = Arc::new(Mutex::new(writer));
 
     // get the total number of results
     // and compute the pagination
@@ -249,8 +244,9 @@ pub async fn call_search_endpoint(aclient: &AuthenticatedClient,
 
 ///
 pub async fn get_full_texts<R>(aclient: AuthenticatedClient,
+                               dir: &PathBuf,
                                reader:  R) -> Result<()>
-where R: std::io::Read + std::marker::Send + 'static + std::io::Seek
+where R: std::io::Read + std::marker::Send + 'static
 {
     use std::io::BufRead;
     use crossbeam_channel::{bounded, Receiver, Sender};
@@ -277,6 +273,7 @@ where R: std::io::Read + std::marker::Send + 'static + std::io::Seek
         let aclient = aclient.clone();
         let arx     = rx.clone();
         let pb      = pb.clone();
+        let dir     = dir.clone();
         let handle = tokio::task::spawn(async move {
             while let Ok(txt) = arx.recv() {
                 if let Ok(search_result) = serde_json::from_str::<piste::SearchResult>(&txt) {
@@ -289,7 +286,7 @@ where R: std::io::Read + std::marker::Send + 'static + std::io::Seek
                                     pb.inc(1);
                                     info!("Got full text for {}", cid);
                                     let filename = format!("{}.txt", cid);
-                                    let filepath = PathBuf::from("output").join(filename);
+                                    let filepath = dir.join(filename);
                                     let file = File::create(&filepath)
                                         .expect("Unable to create file");
                                     let mut writer = BufWriter::new(file);
@@ -346,4 +343,3 @@ where R: std::io::Read + std::marker::Send + 'static + std::io::Seek
 
     Ok(())
 }
-

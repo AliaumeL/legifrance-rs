@@ -99,7 +99,7 @@ actual list of all the results, you can use the `--save` option that will
 create a text file with one line per result.
 
 
-### Use the API (not currently working)
+### Use the API (testing phase)
 
 To use the API, you need to create an account on
 the [PISTE website][piste-api] that hosts the APIs. Following the
@@ -108,17 +108,24 @@ a file called `client-secret.txt` together with an identifier
 that should be stored in a file called `client-id.txt`. 
 
 ```bash
-dilapi --query "search term" --limit 1000
+dilapi --query "ceseda" --start-year 2020 --end-year 2023 --fond "CETAT"
 ```
 
-Note that by default, one gets exactly the results as answered by the API in
-the JSON format. If you want to get the results in a more human readable
-format, you can use the `--human` option. To fetch the actual content of the
-results, and store them you can use the option `--store`. This will create a
-folder `dilapi-store` with the content of the results. Beware that this can be
-especially slow if a large number of results are needed.
+By default, one gets exactly the results as answered by the API in the JSON
+format streamed to stdout. If you want to save the results in a file, you can
+use the `--output` option that will create a text file with one line per result. 
+It is also possible to obtain the full contents of a list of results
+by running the following command:
 
-## How to install
+```bash
+dilapi --texts results.json
+```
+
+It will create a `full-texts` folder with one file per result in the
+`results.json` file. The files are named `<uid>.txt`, and contain the full text
+of the decision/article/document.
+
+# How to install
 
 The easiest way to install the software is to download
 one of the prebuilt binaries from github. If this is not
@@ -143,10 +150,11 @@ A relatively recent version of Rust is required to build the software.
 - [ ] Store results in a file
 - [x] Query using the API
 - [x] Store API results in (several) files
-- [ ] Command line interface for the API
+- [x] Command line interface for the API
 - [ ] Display 10 top results in the command line
-- [ ] Fetch full contents using the API
+- [x] Fetch full contents using the API
 - [ ] Parse API results into a human readable format
+- [ ] Fetch full contents
 
 ## Notes
 
