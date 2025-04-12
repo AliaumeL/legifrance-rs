@@ -1,9 +1,18 @@
 
-use legifrance::api::client::{AuthenticatedClient, PageQuery, ping_api, get_search_result};
-use legifrance::api::example_text_extraction;
+use legifrance::api::client::{AuthenticatedClient, PageQuery, ping_api};
+use legifrance::api::piste::Fond;
+use legifrance::api::{call_search_endpoint, get_full_texts};
+
+use std::path::PathBuf;
 
 // json
 use serde_json::json;
+
+// Create a command line interface.
+// - search query 
+// - save-results
+// - input ids/cids to fetch
+// - populate text cache
 
 #[tokio::main]
 async fn main () {
@@ -22,7 +31,7 @@ async fn main () {
         .expect("Failed to ping API");
 
     let data =  &json!({
-            "id": "LEGIARTI000033219357"
+            "id": "CETATEXT000008234002",
         });
     let response = aclient.post_json_request(
         "/consult/getArticle",
@@ -30,24 +39,37 @@ async fn main () {
     ).await
         .expect("Failed to get article");
 
+
     println!("Ping response: {:?}", ping);
     println!("Response: {:?}", response);
+    println!("Response status: {:?}", response.status());
+    println!("Response text: {:?}", response.text().await);
+    /*
 
-    let txt = example_text_extraction(&aclient).await
-        .expect("Failed to extract text");
+    let q = PageQuery {
+            text: "ceseda".to_owned(), 
+            page: 1, 
+            start_year: Some(2000), 
+            end_year:   Some(2025), 
+            fond:       Some(Fond::Cetat)
+    };
 
-    println!("Text extraction response: {:?}", txt);
+    let dir = PathBuf::from("output");
+
+    let _ = call_search_endpoint(&aclient, &dir, &q).await
+        .expect("Failed to call search endpoint");
+
+    */
+
+    let filename = PathBuf::from("output/ceseda-CETAT.json");
+    let file = std::fs::File::open(&filename)
+        .expect("Failed to open file");
+    let reader = std::io::BufReader::new(file);
 
 
-    let some_docs = get_search_result(
-        &aclient,
-        &PageQuery { text: "ceseda".to_owned(), page: 1, start_year: None, end_year: None, fond: None }
-    ).await
-        .expect("Failed to get search results");
-
-    println!("Search results: {:?}", some_docs.total_result_number);
-
-    println!("Search results: {:?}", some_docs.results);
+    get_full_texts(aclient, reader)
+        .await
+        .expect("Failed to get full texts");
 
 
 }
