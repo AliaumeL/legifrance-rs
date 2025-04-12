@@ -234,8 +234,11 @@ pub async fn get_search_result(
 /// Obtain the full text of an article / law decree / decision
 /// based on its ID and the dataset it belongs to (fond).
 ///
-pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str) -> Result<String> {
-    let endpoint = "/consult/getArticle";
+/// It is unclear which `Fond` one should use. 
+///
+pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str, fond: &Fond) -> Result<String> {
+    let generic_endpoint = "/consult/getArticle";
+    let endpoint = fond.api_consult_endpoint().unwrap_or(generic_endpoint);
 
     info!(
         "Getting full document for {} using {}",
@@ -244,6 +247,9 @@ pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str) -> Result<S
 
     let data = &json!({
         "id":      cid,
+        "cid":     cid,
+        "textId":  cid,
+        "textCid": cid,
     });
 
     let response = aclient
@@ -253,7 +259,7 @@ pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str) -> Result<S
     if response.status().is_success() {
         let text = response.text().await?;
         let parsed: serde_json::Value = serde_json::from_str(&text)?;
-        let out = parsed["article"]["texte"]
+        let out = parsed["text"]["texte"]
             .as_str()
             .unwrap_or("")
             .to_string();

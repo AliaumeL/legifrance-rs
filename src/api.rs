@@ -280,27 +280,29 @@ where R: std::io::Read + std::marker::Send + 'static + std::io::Seek
         let handle = tokio::task::spawn(async move {
             while let Ok(txt) = arx.recv() {
                 if let Ok(search_result) = serde_json::from_str::<piste::SearchResult>(&txt) {
-                    if let Some(cid) = search_result.titles.get(0)
-                        .map(|t| t.cid.clone()) {
-                        info!("Got cid {}", cid);
-                        match get_full_text(&aclient, &cid).await {
-                            Ok(text) => {
-                                pb.inc(1);
-                                info!("Got full text for {}", cid);
-                                let filename = format!("{}.txt", cid);
-                                let filepath = PathBuf::from("output").join(filename);
-                                let file = File::create(&filepath)
-                                    .expect("Unable to create file");
-                                let mut writer = BufWriter::new(file);
-                                writer.write_all(text.as_bytes())
-                                    .expect("Unable to write full text");
-                                writer.flush()
-                                    .expect("Unable to flush writer");
+                    if let Some(fond) = search_result.fond {
+                        if let Some(cid) = search_result.titles.get(0)
+                            .map(|t| t.cid.clone()) {
+                            info!("Got cid {}", cid);
+                            match get_full_text(&aclient, &cid, &fond).await {
+                                Ok(text) => {
+                                    pb.inc(1);
+                                    info!("Got full text for {}", cid);
+                                    let filename = format!("{}.txt", cid);
+                                    let filepath = PathBuf::from("output").join(filename);
+                                    let file = File::create(&filepath)
+                                        .expect("Unable to create file");
+                                    let mut writer = BufWriter::new(file);
+                                    writer.write_all(text.as_bytes())
+                                        .expect("Unable to write full text");
+                                    writer.flush()
+                                        .expect("Unable to flush writer");
 
-                                info!("Wrote full text to {}", filepath.display());
-                            }
-                            Err(e) => {
-                                error!("Error: {}", e);
+                                    info!("Wrote full text to {}", filepath.display());
+                                }
+                                Err(e) => {
+                                    error!("Error: {}", e);
+                                }
                             }
                         }
                     } else {

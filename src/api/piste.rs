@@ -80,10 +80,10 @@ impl Fond {
         match self {
             Fond::Jorf => Some("/consult/jorf"),
             Fond::Cnil => Some("/consult/cnil"),
-            Fond::Cetat => None,
+            Fond::Cetat => Some("/consult/juri"),
             Fond::Juri => Some("/consult/juri"),
             Fond::Jufi => None,
-            Fond::Constit => None,
+            Fond::Constit => Some("/consult/juri"),
             Fond::Kali => Some("/consult/kaliCont"),
             Fond::CodeDate => Some("/consult/code"),
             Fond::LodaDate => Some("/consult/law_decree"),
