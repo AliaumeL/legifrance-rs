@@ -156,6 +156,15 @@ A relatively recent version of Rust is required to build the software.
 - [ ] Parse API results into a human readable format
 - [ ] Fetch full contents
 
+## Useful resources
+
+- [Description of the filters available in the API][dila-doc] (French, xlsx file)
+- [Example queries and usage of the API][dila-api-ex] (French, docx file)
+- [Definition of the terms used in the API][dila-lexique] (French, docx file)
+- [Terms of use of the API][dila-terms] (French, pdf file)
+- [Terms of use of the Legifrance API][legifrance-terms] (French, pdf file)
+- [Open data license][etalab-data-license-2] (French, pdf file)
+
 ## Notes
 
 This repository is a proof of concept and will never be maintained or put into
@@ -167,3 +176,10 @@ you are doing.
 [donnees-juridiques]: https://www.dila.premier-ministre.gouv.fr/services/repertoire-des-informations-publiques/les-donnees-juridiques
 [dila-opendata]: https://echanges.dila.gouv.fr/OPENDATA/
 [piste-api]: https://piste.gouv.fr/
+
+[dila-doc]: https://www.legifrance.gouv.fr/contenu/Media/Files/pied-de-page/description-des-tris-et-filtres-de-l-api.xlsx
+[dila-api-ex]: https://www.legifrance.gouv.fr/contenu/Media/Files/pied-de-page/exemples-d-utilisation-de-l-api.docx
+[dila-lexique]: https://www.legifrance.gouv.fr/contenu/Media/files/lexique-api-lgf.docx
+[dila-terms]: https://piste.gouv.fr/images/com_apiportal/CGU/cgu_portal_FR.pdf
+[legifrance-terms]: https://www.legifrance.gouv.fr/contenu/Media/files/pied-de-page/cgu-legifrance-api-vf-15-12-2022_0.pdf
+[etalab-data-license-2]: https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf
