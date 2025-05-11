@@ -1,5 +1,4 @@
 use anyhow::{Result, Context};
-use serde::{Deserialize, Serialize};
 
 use log::{info, warn, error};
 

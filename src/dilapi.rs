@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use clap::ValueEnum;
 
 #[derive(Debug, Clone, Copy)]
-enum ParseableFond { P(Fond) }
+pub enum ParseableFond { P(Fond) }
 impl ParseableFond {
     fn to_fond(&self) -> Fond {
         match self {
@@ -19,6 +19,7 @@ impl ParseableFond {
         }
     }
 }
+
 pub const FONDS: [ParseableFond; 11] = [
     ParseableFond::P(Fond::Jorf),
     ParseableFond::P(Fond::Cnil),
@@ -79,7 +80,7 @@ async fn main () {
         .await
         .expect("Failed to create authenticated client");
 
-    let ping = ping_api(&aclient, "/search/ping").await
+    let _ping = ping_api(&aclient, "/search/ping").await
         .expect("Failed to ping API");
 
     let cli = Cli::parse();

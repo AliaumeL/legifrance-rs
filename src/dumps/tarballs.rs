@@ -27,6 +27,20 @@ pub enum Fond {
     CAPP,
 }
 
+// implement ValueEnum for Fond
+// so that it can be used in clap
+// (and the help message will show the list of possible tarballs)
+use clap::ValueEnum;
+impl ValueEnum for Fond {
+    fn value_variants<'a>() -> &'a [Self] {
+        &FONDS
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(clap::builder::PossibleValue::new(self.as_str()))
+    }
+}
+
 impl TryFrom<String> for Fond {
     type Error = anyhow::Error;
 

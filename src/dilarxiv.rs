@@ -1,4 +1,3 @@
-mod tarballs;
 
 use clap::Parser;
 
@@ -9,19 +8,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use log::{error, info, warn};
 
-// implement ValueEnum for Fond
-// so that it can be used in clap
-// (and the help message will show the list of possible tarballs)
-use clap::ValueEnum;
-impl ValueEnum for tarballs::Fond {
-    fn value_variants<'a>() -> &'a [Self] {
-        &tarballs::FONDS
-    }
+use legifrance::dumps::tarballs;
 
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        Some(clap::builder::PossibleValue::new(self.as_str()))
-    }
-}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
