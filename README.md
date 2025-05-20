@@ -17,7 +17,11 @@ Asylum) in the *JADE* dataset (Jurisprudence administrative de l'État).
 dilarxiv --tarballs --fond JADE --extract --index
 # Run this to search for CESEDA in the JADE dataset (fast)
 dilarxiv --query "CESEDA" --save result-list.txt
+# Run this to turn the result list into a CSV file with text and metadata
+# it creates a `result-list.txt.csv` file
+dilarxiv --csv result-list.txt
 ```
+ 
 
 The command prints 10 results and saves the full list of results in a file
 called `result-list.txt`. Note that the above query is too precise to 
@@ -98,6 +102,21 @@ By default, the answer is just a list of ten results. If you want to built an
 actual list of all the results, you can use the `--save` option that will
 create a text file with one line per result.
 
+```bash
+dilarxiv --query "search term" --save result-list.txt
+```
+
+If you want to turn the result list into a CSV file with text and metadata,
+you can use the `--csv` option. This will create a CSV file with columns
+for the metadata and the textual content of the documents. Note that 
+some columns may contain nulls. The CSV file is created in the same folder as the
+result list, with the extra `.csv` extension. 
+
+```bash
+dilarxiv --csv result-list.txt
+```
+
+The CSV file will have the following name `result-list.txt.csv`.
 
 ### Use the API (testing phase)
 
@@ -147,7 +166,7 @@ A relatively recent version of Rust is required to build the software.
 - [ ] Somehow compute/find the `uid` used by legifrance in the documents
 - [x] Search in index
 - [ ] Allow for aggregation of results (date ranges, etc.)
-- [ ] Store results in a file
+- [x] Store results in a file
 - [x] Query using the API
 - [x] Store API results in (several) files
 - [x] Command line interface for the API
