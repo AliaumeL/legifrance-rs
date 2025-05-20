@@ -4,97 +4,18 @@
 /// 3. Index the content of the XML files remembering aclnofile name
 /// 4. Answer queries on the database like: what are the files
 ///    matching some fulltext query
-
-
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use reqwest::Client;
 
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
-use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
 
 use futures::stream::StreamExt;
 
-use log::{warn, debug};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
-pub enum Fond {
-    JORF,
-    CNIL,
-    JADE,
-    LEGI,
-    INCA,
-    CASS,
-    CAPP,
-}
-
-// implement ValueEnum for Fond
-// so that it can be used in clap
-// (and the help message will show the list of possible tarballs)
-use clap::ValueEnum;
-impl ValueEnum for Fond {
-    fn value_variants<'a>() -> &'a [Self] {
-        &FONDS
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        Some(clap::builder::PossibleValue::new(self.as_str()))
-    }
-}
-
-impl TryFrom<String> for Fond {
-    type Error = anyhow::Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
-            "JORF" => Ok(Fond::JORF),
-            "CNIL" => Ok(Fond::CNIL),
-            "JADE" => Ok(Fond::JADE),
-            "LEGI" => Ok(Fond::LEGI),
-            "INCA" => Ok(Fond::INCA),
-            "CASS" => Ok(Fond::CASS),
-            "CAPP" => Ok(Fond::CAPP),
-            _ => Err(anyhow::anyhow!("Invalid fond")),
-        }
-    }
-}
-
-/// Implement as_str for Fond
-impl Fond {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Fond::JORF => "JORF",
-            Fond::CNIL => "CNIL",
-            Fond::JADE => "JADE",
-            Fond::LEGI => "LEGI",
-            Fond::INCA => "INCA",
-            Fond::CASS => "CASS",
-            Fond::CAPP => "CAPP",
-        }
-    }
-}
-
-impl std::fmt::Display for Fond {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-
-
-
-/// List of tarballs in the dila server
-pub const FONDS : &[Fond] = &[
-    Fond::JORF,
-    Fond::CNIL,
-    Fond::JADE,
-    Fond::LEGI,
-    Fond::INCA,
-    Fond::CASS,
-    Fond::CAPP,
-];
+use log::{debug, warn};
 
 /// Base URL for the dila server
-pub const BASE_URL : &str = "https://echanges.dila.gouv.fr/OPENDATA";
+pub const BASE_URL: &str = "https://echanges.dila.gouv.fr/OPENDATA";
 
 /// List all tarballs in the dila server that are listed
 /// in the page content given as a string
@@ -103,7 +24,8 @@ pub fn get_tarballs_from_page_content(page: &str) -> Vec<String> {
     // \w*-\w*.tar.gz
     // and return them
     let re = regex::Regex::new(r"\w*-\w*.tar.gz").unwrap();
-    let mut names : Vec<String> = re.captures_iter(page)
+    let mut names: Vec<String> = re
+        .captures_iter(page)
         .filter_map(|cap| cap.get(0))
         .map(|m| m.as_str().to_string())
         .collect();
@@ -112,8 +34,7 @@ pub fn get_tarballs_from_page_content(page: &str) -> Vec<String> {
     names
 }
 
-async fn get_tarballs(client: &Client, 
-                      url: &str) -> Result<Vec<String>> {
+async fn get_tarballs(client: &Client, url: &str) -> Result<Vec<String>> {
     let response = client.get(url).send().await?;
     if response.status().is_success() {
         let body = response.text().await?;
@@ -124,11 +45,12 @@ async fn get_tarballs(client: &Client,
     }
 }
 
-async fn download_tarball(client: &Client, 
-                          url: &str, 
-                          path: &PathBuf,
-                          mp: &MultiProgress
-                          ) -> Result<()> {
+async fn download_tarball(
+    client: &Client,
+    url: &str,
+    path: &PathBuf,
+    mp: &MultiProgress,
+) -> Result<()> {
     if path.exists() {
         debug!("{} already exists, skipping download", path.display());
         return Ok(());
@@ -150,7 +72,8 @@ async fn download_tarball(client: &Client,
     }
 
     if response.status().is_success() {
-        let mut file = tokio::fs::File::create(path).await
+        let mut file = tokio::fs::File::create(path)
+            .await
             .context(format!("Failed to create file {}", path.display()))?;
         let mut buf_writer = tokio::io::BufWriter::new(&mut file);
         let mut bs = response.bytes_stream();
@@ -160,7 +83,8 @@ async fn download_tarball(client: &Client,
                 Ok(bytes) => {
                     // Update the progress bar
                     pb.set_position(pb.position() + bytes.len() as u64);
-                    tokio::io::copy(&mut bytes.as_ref(), &mut buf_writer).await
+                    tokio::io::copy(&mut bytes.as_ref(), &mut buf_writer)
+                        .await
                         .context(format!("Failed to copy bytes to {}", path.display()))?;
                 }
                 Err(e) => {
@@ -177,11 +101,12 @@ async fn download_tarball(client: &Client,
 
 /// Download the tarballs from the dila server
 /// if they are not already present
-async fn download_tarball_list(client : &Client, 
-                               tarballs: &[String], 
-                               dir: &PathBuf,
-                               base_url: &str) -> Result<()> {
-
+async fn download_tarball_list(
+    client: &Client,
+    tarballs: &[String],
+    dir: &PathBuf,
+    base_url: &str,
+) -> Result<()> {
     if !dir.exists() {
         std::fs::create_dir_all(dir)
             .context(format!("Failed to create directory {}", dir.display()))?;
@@ -193,9 +118,9 @@ async fn download_tarball_list(client : &Client,
     let tasks = tarballs.iter().map(async |tarball| {
         let url = format!("{}/{}", base_url, tarball);
         let path = dir.join(tarball);
-        let pdir = path.parent().unwrap_or_else(|| {
-            panic!("Failed to get parent directory for {}", path.display())
-        });
+        let pdir = path
+            .parent()
+            .unwrap_or_else(|| panic!("Failed to get parent directory for {}", path.display()));
         if !pdir.exists() {
             std::fs::create_dir_all(pdir)
                 .context(format!("Failed to create directory {}", pdir.display()))?;
@@ -203,8 +128,7 @@ async fn download_tarball_list(client : &Client,
         Ok(download_tarball(client, &url, &path, &m).await)
     });
 
-    let _results: Vec<Result<Result<()>>>
-        = futures::stream::iter(tasks)
+    let _results: Vec<Result<Result<()>>> = futures::stream::iter(tasks)
         .buffer_unordered(10) // Limit the number of concurrent downloads
         .collect()
         .await;
@@ -212,10 +136,11 @@ async fn download_tarball_list(client : &Client,
     Ok(())
 }
 
-
-pub async fn download_tarballs(client : &Client, 
-                           dir: &PathBuf,
-                           base_url: &str) -> Result<Vec<String>> {
+pub async fn download_tarballs(
+    client: &Client,
+    dir: &PathBuf,
+    base_url: &str,
+) -> Result<Vec<String>> {
     let tarballs = get_tarballs(client, base_url).await?;
     if tarballs.is_empty() {
         warn!("No tarballs found at {}", base_url);
@@ -226,13 +151,10 @@ pub async fn download_tarballs(client : &Client,
     Ok(tarballs)
 }
 
-
-
-/// SECOND PART 
+/// SECOND PART
 /// extract tarballs
 
-pub fn extract_tarball(tarball: &PathBuf, 
-                   dir: &PathBuf) -> Result<()> {
+pub fn extract_tarball(tarball: &PathBuf, dir: &PathBuf) -> Result<()> {
     let file = std::fs::File::open(tarball)
         .context(format!("Failed to open tarball {}", tarball.display()))?;
 
@@ -250,8 +172,9 @@ pub fn extract_tarball(tarball: &PathBuf,
 /// and return them as an iterator
 pub fn list_files_in_dir(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir)
-        .context(format!("Failed to read directory {}", dir.display()))? {
+    for entry in
+        std::fs::read_dir(dir).context(format!("Failed to read directory {}", dir.display()))?
+    {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
@@ -264,10 +187,9 @@ pub fn list_files_in_dir(dir: &PathBuf) -> Result<Vec<PathBuf>> {
 }
 
 /// Naïve search for a string in a file
-fn search_in_file(file: &PathBuf, 
-                   query: &str) -> Result<bool> {
-    let ctn = std::fs::read_to_string(file)
-        .context(format!("Could not open file {}", file.display()))?;
+fn search_in_file(file: &PathBuf, query: &str) -> Result<bool> {
+    let ctn =
+        std::fs::read_to_string(file).context(format!("Could not open file {}", file.display()))?;
     if ctn.contains(query) {
         Ok(true)
     } else {
@@ -277,18 +199,19 @@ fn search_in_file(file: &PathBuf,
 
 /// Search for a string in all files in a directory
 /// and return the files that match
-pub fn search_in_dir(dir: &PathBuf, 
-                     query: &str) -> Result<Vec<PathBuf>> {
+pub fn search_in_dir(dir: &PathBuf, query: &str) -> Result<Vec<PathBuf>> {
     let mut results = Vec::new();
 
     let mut candidates = vec![dir.clone()];
     let mut total = 1;
 
     let pb = ProgressBar::new(0);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{msg} [{wide_bar}] {pos}/{len} ({eta})")
-        .context("Failed to create progress bar template")?
-        .progress_chars("##-"));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{wide_bar}] {pos}/{len} ({eta})")
+            .context("Failed to create progress bar template")?
+            .progress_chars("##-"),
+    );
     pb.set_message(format!("Searching in {}", dir.display()));
     pb.set_length(total);
 
@@ -296,7 +219,8 @@ pub fn search_in_dir(dir: &PathBuf,
         pb.set_message(format!("Searching in {}", candidate.display()));
         pb.inc(1);
         for entry in std::fs::read_dir(candidate)
-            .context(format!("Failed to read directory {}", dir.display()))? {
+            .context(format!("Failed to read directory {}", dir.display()))?
+        {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
@@ -318,29 +242,28 @@ pub fn search_in_dir(dir: &PathBuf,
 
 pub mod file_collector {
 
-    use std::io::Write;
-    use std::io::BufWriter;
     use std::fs::OpenOptions;
+    use std::io::BufWriter;
+    use std::io::Write;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
-    use tantivy::{DocId, Score, Result, SegmentOrdinal};
     use tantivy::collector::Collector;
     use tantivy::collector::SegmentCollector;
     use tantivy::index::SegmentReader;
-    use tantivy::store::StoreReader;
     use tantivy::schema::Field;
-    use tantivy::schema::{TantivyDocument, OwnedValue};
-
+    use tantivy::schema::{OwnedValue, TantivyDocument};
+    use tantivy::store::StoreReader;
+    use tantivy::{DocId, Result, Score, SegmentOrdinal};
 
     /// In order to write the list of all matches into
     /// a file we will create our own Collector / SegmentCollector
     /// that will buffer-write the results to a file
-    /// 
+    ///
     /// FileList collector is an empty struct used to implement the traits
     pub struct FileListCollector {
-        path_field:     Field,
-        bufwriter:      FileCollectorFruit,
+        path_field: Field,
+        bufwriter: FileCollectorFruit,
     }
 
     impl FileListCollector {
@@ -352,7 +275,10 @@ pub mod file_collector {
                 .open(file_path)
                 .expect("could not open file");
             let bufwriter = Arc::new(Mutex::new(BufWriter::new(file)));
-            FileListCollector { path_field,  bufwriter }
+            FileListCollector {
+                path_field,
+                bufwriter,
+            }
         }
     }
 
@@ -362,36 +288,32 @@ pub mod file_collector {
     type FileCollectorFruit = Arc<Mutex<std::io::BufWriter<std::fs::File>>>;
 
     pub struct FileListSegmentCollector {
-        path_field:     Field,
-        bufwriter:      FileCollectorFruit,
-        store_reader:   StoreReader,
+        path_field: Field,
+        bufwriter: FileCollectorFruit,
+        store_reader: StoreReader,
     }
 
     impl SegmentCollector for FileListSegmentCollector {
         type Fruit = ();
 
         fn collect(&mut self, doc: DocId, _: Score) {
-            let doc : TantivyDocument = 
-                      self.store_reader.get(doc)
-                          .expect(format!("Could not get document {doc}").as_str());
+            let doc: TantivyDocument = self
+                .store_reader
+                .get(doc)
+                .expect(format!("Could not get document {doc}").as_str());
 
             match doc.get_first(self.path_field) {
                 Some(OwnedValue::Str(s)) => {
-                    let mut lock = self.bufwriter.lock()
-                        .expect("Unable to acquire lock");
-                    write!(lock, "{}\n", s)
-                        .expect("Unable to write to buffer");
+                    let mut lock = self.bufwriter.lock().expect("Unable to acquire lock");
+                    write!(lock, "{}\n", s).expect("Unable to write to buffer");
                 }
-                _ => {
-                }
+                _ => {}
             }
         }
 
         fn harvest(self) {
-            let mut lock = self.bufwriter.lock()
-                .expect("Unable to acquire lock");
-            lock.flush()
-                .expect("unable to flush buffer");
+            let mut lock = self.bufwriter.lock().expect("Unable to acquire lock");
+            lock.flush().expect("unable to flush buffer");
         }
     }
 
@@ -399,11 +321,15 @@ pub mod file_collector {
         type Fruit = ();
         type Child = FileListSegmentCollector;
 
-        fn requires_scoring(&self) -> bool { false }
+        fn requires_scoring(&self) -> bool {
+            false
+        }
 
-        fn for_segment(&self, 
-                       _: SegmentOrdinal,
-                       segment_reader: &SegmentReader) -> Result<Self::Child> {
+        fn for_segment(
+            &self,
+            _: SegmentOrdinal,
+            segment_reader: &SegmentReader,
+        ) -> Result<Self::Child> {
             let store = segment_reader.get_store_reader(100)?;
             Ok(FileListSegmentCollector {
                 path_field: self.path_field,
@@ -424,36 +350,32 @@ pub struct IndexFields {
     year: tantivy::schema::Field,
 }
 
-pub fn init_tantivy(index_path: &PathBuf) -> Result<(
-                        tantivy::Index, 
-                        IndexFields)> {
+pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields)> {
     use tantivy::Index;
     use tantivy::schema::*;
     use tantivy::tokenizer::*;
 
-    let tok_fr =  TextAnalyzer::builder(SimpleTokenizer::default())
+    let tok_fr = TextAnalyzer::builder(SimpleTokenizer::default())
         .filter(RemoveLongFilter::limit(40))
         .filter(LowerCaser)
         .filter(AsciiFoldingFilter)
         .filter(StopWordFilter::new(Language::French).unwrap())
         .build();
 
-    
     let idx_fr = TextFieldIndexing::default()
-                .set_tokenizer("custom_fr")
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        .set_tokenizer("custom_fr")
+        .set_index_option(IndexRecordOption::WithFreqsAndPositions);
 
     let opts_fr = TextOptions::default()
         .set_indexing_options(idx_fr)
         .set_stored();
 
-
     let mut schema_builder = Schema::builder();
-    let path    = schema_builder.add_text_field("path", STRING | STORED);
-    let body    = schema_builder.add_text_field("body", opts_fr);
-    let year    = schema_builder.add_u64_field("year", FAST | INDEXED | STORED);
-    let schema  = schema_builder.build();
-    
+    let path = schema_builder.add_text_field("path", STRING | STORED);
+    let body = schema_builder.add_text_field("body", opts_fr);
+    let year = schema_builder.add_u64_field("year", FAST | INDEXED | STORED);
+    let schema = schema_builder.build();
+
     // If the index does not exist, create it
     // otherwise open it
     let index = match Index::open_in_dir(index_path) {
@@ -466,12 +388,12 @@ pub fn init_tantivy(index_path: &PathBuf) -> Result<(
 
     index.tokenizers().register("custom_fr", tok_fr);
 
-
     Ok((index, IndexFields { path, body, year }))
 }
 
 fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<u64> {
-    let names : Vec<u64> = re.captures_iter(doc)
+    let names: Vec<u64> = re
+        .captures_iter(doc)
         .map(|cap| cap["year"].to_owned())
         .filter_map(|s| s.parse().ok())
         .take(1)
@@ -490,10 +412,8 @@ struct FondXMLFile {
     year: u64,
 }
 
-fn parse_file(file: &PathBuf, 
-              re: &regex::Regex) -> Result<FondXMLFile> {
-    let body = std::fs::read_to_string(file)
-        .context("Could not open file")?;
+fn parse_file(file: &PathBuf, re: &regex::Regex) -> Result<FondXMLFile> {
+    let body = std::fs::read_to_string(file).context("Could not open file")?;
     let year = get_year_juri(&body, re)
         .context(format!("Could not get year in {}", file.to_string_lossy()))?;
     let path = file.to_string_lossy().to_string();
@@ -501,14 +421,16 @@ fn parse_file(file: &PathBuf,
 }
 
 /// Index a file in the tantivy index
-fn index_file(index_writer: &mut tantivy::IndexWriter, 
-              fields:       &IndexFields,
-              file:         FondXMLFile) -> Result<()> {
+fn index_file(
+    index_writer: &mut tantivy::IndexWriter,
+    fields: &IndexFields,
+    file: FondXMLFile,
+) -> Result<()> {
     let mut doc = tantivy::TantivyDocument::default();
 
     doc.add_text(fields.path, file.path);
     doc.add_text(fields.body, file.body);
-    doc.add_u64(fields.year,  file.year);
+    doc.add_u64(fields.year, file.year);
     index_writer.add_document(doc)?;
     Ok(())
 }
@@ -516,29 +438,31 @@ fn index_file(index_writer: &mut tantivy::IndexWriter,
 /// Index all files in a directory using tantivy,
 /// recursively
 pub fn index_files_in_dir(
-                       index_writer: &mut tantivy::IndexWriter, 
-                       fields: &IndexFields,
-                       dir: &PathBuf) -> Result<()> {
+    index_writer: &mut tantivy::IndexWriter,
+    fields: &IndexFields,
+    dir: &PathBuf,
+) -> Result<()> {
     // create a progress bar
     let pb = ProgressBar::new(0);
     let re = regex::Regex::new(r"(?<year>\d*)-\d*-\d*</DATE").unwrap();
-    let files : Vec<PathBuf> = list_files_in_dir(dir)?
+    let files: Vec<PathBuf> = list_files_in_dir(dir)?
         .into_iter()
-        .filter(|p| 
+        .filter(|p| {
             if let Some(e) = p.extension() {
                 e == "xml"
             } else {
                 false
             }
-        )
+        })
         .collect();
 
-
     pb.set_length(files.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{msg} [{wide_bar}] {pos}/{len} ({eta})")
-        .context("Failed to create progress bar template")?
-        .progress_chars("##-"));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg} [{wide_bar}] {pos}/{len} ({eta})")
+            .context("Failed to create progress bar template")?
+            .progress_chars("##-"),
+    );
     pb.set_message(format!("Indexing {} files", files.len()));
 
     for file in files {
@@ -560,63 +484,69 @@ pub fn index_files_in_dir(
     Ok(())
 }
 
-/// search all files in the index 
-pub fn search_index(index : &tantivy::Index, 
-                    fields: &IndexFields,
-                    save  : &Option<String>,
-                    query : &str) -> Result<(usize, Vec<(String,u64)>)> {
+/// search all files in the index
+pub fn search_index(
+    index: &tantivy::Index,
+    fields: &IndexFields,
+    save: &Option<String>,
+    query: &str,
+) -> Result<(usize, Vec<(String, u64)>)> {
     use tantivy::schema::document::Value;
-    let reader = index.reader_builder()
+    let reader = index
+        .reader_builder()
         .reload_policy(tantivy::ReloadPolicy::OnCommitWithDelay)
         .try_into()?;
     let searcher = reader.searcher();
-    let query_parser = 
-        tantivy::query::QueryParser::for_index(index, vec![fields.body]);
+    let query_parser = tantivy::query::QueryParser::for_index(index, vec![fields.body]);
     let query = query_parser.parse_query(query)?;
-    
-    let (doc_count, top_docs) = 
-        if let Some(savepath) = save {
-            let fpath = PathBuf::from(savepath);
-            let fcol = file_collector::FileListCollector::new(fields.path,
-                                                              &fpath);
-            let (d, t, _) =  searcher.search(&query, 
-                        &(tantivy::collector::Count,
-                          tantivy::collector::TopDocs::with_limit(10),
-                          fcol
-                          ))?;
-            (d, t)
-        } else {
-            searcher.search(&query, 
-                        &(tantivy::collector::Count,
-                          tantivy::collector::TopDocs::with_limit(10),
-                          ))?
-        };
+
+    let (doc_count, top_docs) = if let Some(savepath) = save {
+        let fpath = PathBuf::from(savepath);
+        let fcol = file_collector::FileListCollector::new(fields.path, &fpath);
+        let (d, t, _) = searcher.search(
+            &query,
+            &(
+                tantivy::collector::Count,
+                tantivy::collector::TopDocs::with_limit(10),
+                fcol,
+            ),
+        )?;
+        (d, t)
+    } else {
+        searcher.search(
+            &query,
+            &(
+                tantivy::collector::Count,
+                tantivy::collector::TopDocs::with_limit(10),
+            ),
+        )?
+    };
 
     let mut results = Vec::new();
     for (_, doc_address) in top_docs {
-        let doc : tantivy::TantivyDocument = searcher.doc(doc_address)?;
-        let title = doc.get_first(fields.path)
+        let doc: tantivy::TantivyDocument = searcher.doc(doc_address)?;
+        let title = doc
+            .get_first(fields.path)
             .ok_or_else(|| anyhow::anyhow!("Failed to get path"))?
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Path is not a string"))?;
-        let year  = doc.get_first(fields.year)
+        let year = doc
+            .get_first(fields.year)
             .ok_or_else(|| anyhow::anyhow!("Failed to get year"))?
             .as_u64()
             .ok_or_else(|| anyhow::anyhow!("Year is not u64"))?;
 
         results.push((title.to_owned(), year));
-
     }
     Ok((doc_count, results))
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const MOCK_CASS_CONTENT: &str = r#"
 <img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231125-130812.tar.gz">CASS_20231125-130812.tar.gz</a>                 2023-11-25 15:04  261K  
@@ -629,7 +559,6 @@ mod tests {
 <img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20240115-204455.tar.gz">CASS_20240115-204455.tar.gz</a>                 2024-01-15 20:47  306K
 "#;
 
-
     async fn setup_mock_server() -> MockServer {
         let mock_server = MockServer::start().await;
 
@@ -638,7 +567,7 @@ mod tests {
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_string(MOCK_CASS_CONTENT.to_string())
-                    .append_header("Content-Type", "text/html")
+                    .append_header("Content-Type", "text/html"),
             )
             // Mounting the mock on the mock server - it's now effective!
             .mount(&mock_server)
@@ -646,17 +575,6 @@ mod tests {
 
         mock_server
     }
-
-    #[test]
-    fn test_fond_as_str() {
-        for fond in FONDS {
-            let str = fond.as_str();
-            let fond2 = Fond::try_from(str.to_string());
-            assert!(fond2.is_ok());
-            assert_eq!(fond, &fond2.unwrap());
-        }
-    }
-
 
     #[test]
     fn test_get_tarballs_from_page_content() {
@@ -675,6 +593,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tarballs() {
+        use crate::dumps::fonds::Fond;
+
         let mock_server = setup_mock_server().await;
         let url = format!("{}/{}", mock_server.uri(), Fond::CASS);
         let client = Client::new();
@@ -682,5 +602,4 @@ mod tests {
         assert_eq!(tarballs.len(), 8);
         assert_eq!(tarballs[0], "CASS_20231125-130812.tar.gz");
     }
-
 }

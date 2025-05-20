@@ -1,4 +1,3 @@
-
 use clap::Parser;
 
 use anyhow::{Context, Result};
@@ -8,8 +7,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use log::{error, info, warn};
 
+use legifrance::dumps::extractor::{count_tags_in_file, parse_file};
+use legifrance::dumps::fonds::{FONDS, Fond};
 use legifrance::dumps::tarballs;
-
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -22,7 +22,7 @@ struct Cli {
     /// the default (empty) list will download all tarballs
     ///
     #[clap(short, long, num_args(0..))]
-    fond: Vec<tarballs::Fond>,
+    fond: Vec<Fond>,
 
     /// Whether to extract the tarballs
     #[clap(short, long, default_value = "false")]
@@ -39,9 +39,14 @@ struct Cli {
     /// Whether to save *all* the search results in a file
     #[clap(short, long)]
     save: Option<String>,
+
+    /// Read a result list (one line per file) and create
+    /// a CSV with the correct metadata
+    #[clap(short, long)]
+    csv: Option<String>,
 }
 
-async fn get_tarballs(fonds: &[tarballs::Fond], dir: &PathBuf) -> Result<Vec<String>> {
+async fn get_tarballs(fonds: &[Fond], dir: &PathBuf) -> Result<Vec<String>> {
     // Create a new HTTP client
     let client = reqwest::Client::new();
 
@@ -108,6 +113,34 @@ fn extract_tarballs(idir: &PathBuf, odir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn result_file_to_csv(result_file: &str, output_file: &str) -> Result<()> {
+    use std::io::BufRead;
+
+    let file = std::fs::File::open(result_file)?;
+    let reader = std::io::BufReader::new(file);
+    let mut writer = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_path(output_file)?;
+
+    let mut tcount = std::collections::HashMap::new();
+    let mut buffer = String::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        count_tags_in_file(&line, &mut tcount);
+        let content = parse_file(&line, &mut buffer);
+        writer.serialize(content)?;
+        buffer.clear();
+    }
+    writer.flush()?;
+
+    println!("Found {} tags", tcount.len());
+    for (tag, count) in tcount {
+        println!("{}: {}", tag, count);
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     // Initialize the logger
@@ -115,17 +148,13 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let cwd = std::env::current_dir()
-        .expect("Failed to get current directory");
+    let cwd = std::env::current_dir().expect("Failed to get current directory");
 
-    let dir = cwd 
-        .join("tarballs");
+    let dir = cwd.join("tarballs");
 
-    let edir = cwd 
-        .join("extracted");
+    let edir = cwd.join("extracted");
 
-    let index_path = cwd
-        .join("index");
+    let index_path = cwd.join("index");
 
     if !index_path.exists() {
         std::fs::create_dir_all(&index_path).expect("Failed to create index directory");
@@ -133,7 +162,7 @@ async fn main() {
 
     if args.tarballs {
         let fonds = if args.fond.is_empty() {
-            tarballs::FONDS
+            FONDS
         } else {
             &args.fond
         };
@@ -165,5 +194,11 @@ async fn main() {
             }
             Err(e) => error!("Error searching index: {}", e),
         }
+    }
+
+    if let Some(result_file) = args.csv {
+        let output_file = format!("{}.csv", result_file);
+        result_file_to_csv(&result_file, &output_file)
+            .expect("Failed to convert result file to CSV");
     }
 }
