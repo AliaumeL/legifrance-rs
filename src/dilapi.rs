@@ -124,6 +124,4 @@ async fn main () {
             .await
             .expect("Failed to get full texts");
     }
-
-
 }
