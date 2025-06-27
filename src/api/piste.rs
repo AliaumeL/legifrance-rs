@@ -1,7 +1,7 @@
 ///
 /// This files contains the data structures needed to represent queries
 /// and responses to the Piste API for legifrance.
-/// It is separated from any logic to make it easier to test and 
+/// It is separated from any logic to make it easier to test and
 /// maintain, in particular to witness changes in the API.
 ///
 /// The api is documented at
@@ -10,19 +10,18 @@
 /// We do not fully implement the API, but only the parts we need.
 ///
 ///
-/// We also translate the API documentation to English, 
+/// We also translate the API documentation to English,
 /// so that it feels more consistent with the rest of the code.
-
 use serde::{Deserialize, Serialize};
 
 /// The version of the API we are interacting with.
-pub const VERSION  : &str = "2.4.2";
+pub const VERSION: &str = "2.4.2";
 
 /// The endpoint for authenticating to the API.
 pub const OAUTH_URL: &str = "https://oauth.piste.gouv.fr/api/oauth/token";
 
 /// The endpoint for the API (production).
-pub const API_URL : &str = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app";
+pub const API_URL: &str = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app";
 
 /// All available fonds (datasets) in the API.
 #[derive(Serialize, Deserialize, Clone, Debug, Copy)]
@@ -99,48 +98,45 @@ impl std::fmt::Display for Fond {
     }
 }
 
-
-
 /// The body of the request to authenticate to the API.
-/// 
+///
 /// This should be sent as a JSON object in the body of a POST request
 /// to the authentication endpoint in the global variable `API_OAUTH`.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AuthBody {
-    pub grant_type:    String,
-    pub client_id:     String,
+    pub grant_type: String,
+    pub client_id: String,
     pub client_secret: String,
-    pub scope:         String,
+    pub scope: String,
 }
 
 /// The response from the API when authenticating.
-/// 
+///
 /// Note that typically the token is valid for 1 hour.
 /// To use this token, it suffices to place it in the header of the request
 /// to the API, in the `Authorization` field, prefixed by the string `Bearer `.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AuthResponse {
     pub access_token: String,
-    pub token_type:   String,
-    pub expires_in:   u64,
-    pub scope:        String,
+    pub token_type: String,
+    pub expires_in: u64,
+    pub scope: String,
 }
-
 
 /// An object representing a search query.
 /// This is the object that is sent to the API on /search-like endpoints.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SearchQuery {
     #[serde(rename = "recherche")]
-    pub search:      Search,
-    pub fond:        String,
+    pub search: Search,
+    pub fond: String,
 }
 
 /// The object representing the search criteria.
-/// 
+///
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Search {
-    /// Whether the search is “advanced”, this is 
+    /// Whether the search is “advanced”, this is
     /// tied to the way the search bar of <legifrance.fr> is
     /// built and should probably be set to false
     #[serde(rename = "fromAdvancedRecherche")]
@@ -166,22 +162,22 @@ pub struct Search {
     pub page_number: u8,
     /// Filters to apply to the search.
     #[serde(rename = "filtres")]
-    pub filters:     Option<Vec<Filter>>,
+    pub filters: Option<Vec<Filter>>,
     /// The sort order to use for the search.
-    pub sort:        Option<String>,
+    pub sort: Option<String>,
     /// The second sort order to use for the search (in case of ties).
     #[serde(rename = "secondSort")]
     pub second_sort: Option<String>,
 }
 
-/// The type of pagination to use. 
+/// The type of pagination to use.
 /// The behavior of `Article` is not yet documented.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Pagination {
     #[serde(rename = "DEFAUT")]
     Default,
     #[serde(rename = "ARTICLE")]
-    Article
+    Article,
 }
 
 /// A logical operator for combining constraints
@@ -199,13 +195,13 @@ pub enum Operator {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Filter {
     /// The date range to use as a filter.
-    pub dates:   DateRange,
+    pub dates: DateRange,
     /// The field over which to apply the filter.
     pub facette: FilterType,
 }
 
 /// The field over which to apply a given filter.
-/// For now, we only listed some 
+/// For now, we only listed some
 /// possibilities for date fields.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum FilterType {
@@ -216,7 +212,7 @@ pub enum FilterType {
     #[serde(rename = "DATE_PUBLICATION")]
     PublicationDate,
     #[serde(rename = "DATE_EFFET")]
-    EffectDate
+    EffectDate,
 }
 
 /// The date range to use for the search.
@@ -224,9 +220,8 @@ pub enum FilterType {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DateRange {
     pub start: String,
-    pub end:   String,
+    pub end: String,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Field {
@@ -307,7 +302,7 @@ pub struct SearchResult {
     /// The array of “titles” of the result.
     pub titles: Vec<SearchResultTitle>,
     /// The text of the result.
-    pub text : Option<String>,
+    pub text: Option<String>,
     /// The current legal status of the result.
     #[serde(rename = "etat")]
     pub legal_status: Option<String>,
