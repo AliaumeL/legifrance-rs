@@ -1,0 +1,68 @@
+name: Generate Example Datasets
+
+on:
+  # can be manually triggered
+  workflow_dispatch:
+  # and also runs every monday at midnight UTC
+  schedule:
+    - cron: '0 0 * * 1'
+
+jobs:
+  jorf-example:
+    name: legifrance-rs - example jorf 
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: robinraju/release-downloader@v1
+        with:
+          latest: true
+          extract: true
+          fileName: "*linux*"
+          repository: "AliaumeL/legifrance-rs"
+      - name: Allow execution
+        run: |
+          ls -lah
+          chmod +x dilarxiv 
+          chmod +x dilapi
+          chmod +x ./examples/jorf.sh
+      - name: Run example
+        run: |
+          # update path to contain the downloaded binaries
+          export PATH=$PATH:$(pwd)
+          ./examples/jorf.sh
+      - name: Upload example dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: jorf-dataset.csv
+          path: jorf-files.txt.csv
+
+  ceseda-example:
+    name: legifrance-rs - example ceseda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: robinraju/release-downloader@v1
+        with:
+          latest: true
+          extract: true
+          fileName: "*linux*"
+          repository: "AliaumeL/legifrance-rs"
+      - name: Allow execution
+        run: |
+          ls -lah
+          chmod +x dilarxiv 
+          chmod +x dilapi
+          chmod +x ./examples/ceseda.sh
+      - name: Run example
+        run: |
+          # update path to contain the downloaded binaries
+          export PATH=$PATH:$(pwd)
+          ./examples/ceseda.sh
+      - name: Upload example dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ceseda-dataset.csv
+          path: ceseda-files.txt.csv
+
