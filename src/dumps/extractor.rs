@@ -12,6 +12,8 @@ use quick_xml::reader::Reader;
 
 use serde::{Deserialize, Serialize};
 
+use std::path::PathBuf;
+
 
 pub mod law_extraction {
     use once_cell::sync::OnceCell;
@@ -46,7 +48,7 @@ pub mod law_extraction {
 /// This function takes a file that contains XML data
 /// and a mutable HashMap that will be filled with the
 /// count of each tag in the XML file.
-pub fn count_tags_in_file(file: &str, tag_count: &mut std::collections::HashMap<String, usize>) {
+pub fn count_tags_in_file(file: &PathBuf, tag_count: &mut std::collections::HashMap<String, usize>) {
     use std::fs::File;
     use std::io::Read;
 
@@ -249,7 +251,7 @@ fn reader_to_pre_dila(r: &mut Reader<&[u8]>) -> PreDilaText {
 
 /// This function reads from a io::Read and returns a PreDilaText struct
 /// with the metadata and text of the decision.
-pub fn parse_file(file: &str, buf: &mut String) -> PreDilaText {
+pub fn parse_file(file: &PathBuf, buf: &mut String) -> PreDilaText {
     use std::fs::File;
     use std::io::Read;
     use std::path::PathBuf;

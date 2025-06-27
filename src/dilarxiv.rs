@@ -196,7 +196,7 @@ fn extract_tarballs(idir : &PathBuf, to_extract : &[String], odir: &PathBuf) -> 
     Ok(())
 }
 
-fn result_file_to_csv(result_file: &str, output_file: &str) -> Result<()> {
+fn result_file_to_csv(edir : &PathBuf, result_file: &str, output_file: &str) -> Result<()> {
     use std::io::BufRead;
 
     let file = std::fs::File::open(result_file)?;
@@ -210,8 +210,10 @@ fn result_file_to_csv(result_file: &str, output_file: &str) -> Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        count_tags_in_file(&line, &mut tcount);
-        let content = parse_file(&line, &mut buffer);
+        let path = edir.join(line);
+        info!("Processing file: {}", path.display());
+        count_tags_in_file(&path, &mut tcount);
+        let content = parse_file(&path, &mut buffer);
         writer.serialize(content)?;
         buffer.clear();
     }
@@ -272,22 +274,25 @@ async fn main() {
     }
 
     if args.update {
+        use temp_dir::TempDir;
+
         info!("Updating index at {}", index_path.display());
         let fonds = if args.fond.is_empty() {
             FONDS
         } else {
             &args.fond
         };
+
         // create a temporary directory
-        let tmpd = cwd.join("tmp");
+        let tmpd = TempDir::new()
+            .expect("Failed to create temporary directory")
+            .path()
+            .to_path_buf();
+
         update_and_index_data(fonds, &dir, &index_path, &edir, &tmpd)
             .await
             .expect("Failed to update and index data");
-        // delete the temporary directory
-        if tmpd.exists() {
-            std::fs::remove_dir_all(&tmpd)
-                .expect("Failed to remove temporary directory");
-        }
+
     }
 
     if let Some(query) = args.query {
@@ -304,7 +309,7 @@ async fn main() {
 
     if let Some(result_file) = args.csv {
         let output_file = format!("{}.csv", result_file);
-        result_file_to_csv(&result_file, &output_file)
+        result_file_to_csv(&edir, &result_file, &output_file)
             .expect("Failed to convert result file to CSV");
     }
 }
