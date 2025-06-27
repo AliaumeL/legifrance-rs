@@ -14,11 +14,10 @@ use serde::{Deserialize, Serialize};
 
 use std::path::PathBuf;
 
-
 pub mod law_extraction {
     use once_cell::sync::OnceCell;
-    use std::collections::HashMap;
     use regex::Regex;
+    use std::collections::HashMap;
 
     #[derive(Eq, Hash, PartialEq)]
     pub struct LawCode {
@@ -29,18 +28,18 @@ pub mod law_extraction {
     pub fn law_regex() -> &'static Regex {
         static INSTANCE: OnceCell<Regex> = OnceCell::new();
         INSTANCE.get_or_init(|| {
-            Regex::new(r"([A-Z])\.\s+([0-9-]+)")
-                .expect("Unable to construct law searching regex")
+            Regex::new(r"([A-Z])\.\s+([0-9-]+)").expect("Unable to construct law searching regex")
         })
     }
 
-    pub fn law_uses(s : &str, count : &mut HashMap<LawCode,usize>) {
+    pub fn law_uses(s: &str, count: &mut HashMap<LawCode, usize>) {
         let re = law_regex();
         for (_, [prefix, number]) in re.captures_iter(s).map(|c| c.extract()) {
-            let law = LawCode { prefix: prefix.to_string(), number: number.to_string() };
-            count.entry(law)
-                 .and_modify(|c| *c += 1)
-                 .or_insert(1);
+            let law = LawCode {
+                prefix: prefix.to_string(),
+                number: number.to_string(),
+            };
+            count.entry(law).and_modify(|c| *c += 1).or_insert(1);
         }
     }
 }

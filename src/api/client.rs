@@ -9,7 +9,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use log::{error, info, warn, debug};
+use log::{debug, error, info, warn};
 
 use crate::api::piste::*;
 
@@ -158,11 +158,15 @@ impl From<&PageQuery> for SearchQuery {
             None
         };
 
-        let second_sort = if sort.is_none() { None } else { Some("ID".to_string()) };
+        let second_sort = if sort.is_none() {
+            None
+        } else {
+            Some("ID".to_string())
+        };
         let sort_facette = match &pq.fond {
             Some(Fond::Cetat) => FilterType::DecisionDate,
-            Some(Fond::Juri)  => FilterType::SignatureDate,
-            Some(Fond::Jufi)  => FilterType::SignatureDate,
+            Some(Fond::Juri) => FilterType::SignatureDate,
+            Some(Fond::Jufi) => FilterType::SignatureDate,
             _ => FilterType::PublicationDate,
         };
 
@@ -215,7 +219,7 @@ impl From<&PageQuery> for SearchQuery {
 ///
 pub async fn get_search_result(
     aclient: &AuthenticatedClient,
-    pq:      &PageQuery,
+    pq: &PageQuery,
 ) -> Result<SearchResponse> {
     let query: SearchQuery = pq.into();
     debug!("Query: {:?}", query);
@@ -243,16 +247,17 @@ pub async fn get_search_result(
 /// Obtain the full text of an article / law decree / decision
 /// based on its ID and the dataset it belongs to (fond).
 ///
-/// It is unclear which `Fond` one should use. 
+/// It is unclear which `Fond` one should use.
 ///
-pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str, fond: &Fond) -> Result<String> {
+pub async fn get_full_text(
+    aclient: &AuthenticatedClient,
+    cid: &str,
+    fond: &Fond,
+) -> Result<String> {
     let generic_endpoint = "/consult/getArticle";
     let endpoint = fond.api_consult_endpoint().unwrap_or(generic_endpoint);
 
-    info!(
-        "Getting full document for {} using {}",
-        cid, endpoint
-    );
+    info!("Getting full document for {} using {}", cid, endpoint);
 
     let data = &json!({
         "id":      cid,
@@ -268,10 +273,7 @@ pub async fn get_full_text(aclient: &AuthenticatedClient, cid: &str, fond: &Fond
     if response.status().is_success() {
         let text = response.text().await?;
         let parsed: serde_json::Value = serde_json::from_str(&text)?;
-        let out = parsed["text"]["texte"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+        let out = parsed["text"]["texte"].as_str().unwrap_or("").to_string();
         Ok(out)
     } else {
         let status = response.status();
