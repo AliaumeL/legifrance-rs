@@ -11,7 +11,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
 use futures::stream::StreamExt;
-// import futures filter map 
+// import futures filter map
 
 use log::{debug, warn};
 
@@ -123,13 +123,12 @@ async fn download_tarball_list(
             .parent()
             .unwrap_or_else(|| panic!("Failed to get parent directory for {}", path.display()));
         if !pdir.exists() {
-            std::fs::create_dir_all(pdir)
-                .expect("Failed to create directory");
+            std::fs::create_dir_all(pdir).expect("Failed to create directory");
         }
         let result = download_tarball(client, &url, &path, &m).await;
         match result {
             Ok(true) => Some(tarball.clone()),
-            _ => None
+            _ => None,
         }
     });
 
@@ -138,7 +137,6 @@ async fn download_tarball_list(
         .filter_map(async |r| r)
         .collect::<Vec<_>>()
         .await;
-
 
     Ok(results)
 }
@@ -178,12 +176,13 @@ pub fn extract_tarball(tarball: &PathBuf, dir: &PathBuf) -> Result<()> {
 /// List all files recursively in a directory
 pub fn list_files_in_dir(dir: PathBuf) -> Result<Vec<PathBuf>> {
     let mut dir_stack = Vec::new();
-    let mut files    = Vec::new();
+    let mut files = Vec::new();
     dir_stack.push(dir);
     while let Some(current_dir) = dir_stack.pop() {
-        let dir_list = 
-            std::fs::read_dir(&current_dir)
-            .context(format!("Failed to read directory {}", current_dir.display()))?;
+        let dir_list = std::fs::read_dir(&current_dir).context(format!(
+            "Failed to read directory {}",
+            current_dir.display()
+        ))?;
         for entry in dir_list {
             let entry = entry.expect("Failed to read directory entry");
             let path = entry.path();
@@ -427,9 +426,11 @@ fn parse_file(dir: &PathBuf, file: &PathBuf, re: &regex::Regex) -> Result<FondXM
     let body = std::fs::read_to_string(file).context("Could not open file")?;
     let year = get_year_juri(&body, re)
         .context(format!("Could not get year in {}", file.to_string_lossy()))?;
-    let path = file.strip_prefix(dir)
+    let path = file
+        .strip_prefix(dir)
         .map_err(|_| anyhow::anyhow!("Failed to strip prefix from {}", file.display()))?
-        .to_string_lossy().to_string();
+        .to_string_lossy()
+        .to_string();
     Ok(FondXMLFile { path, body, year })
 }
 
@@ -460,10 +461,7 @@ pub fn index_files_in_dir(
     let re = regex::Regex::new(r"(?<year>\d*)-\d*-\d*</DATE").unwrap();
     let files: Vec<PathBuf> = list_files_in_dir(dir.clone())?
         .into_iter()
-        .filter(|p| {
-            p.is_file() && 
-            p.extension().map_or(false, |ext| ext == "xml")
-        })
+        .filter(|p| p.is_file() && p.extension().map_or(false, |ext| ext == "xml"))
         .collect();
 
     pb.set_length(files.len() as u64);
