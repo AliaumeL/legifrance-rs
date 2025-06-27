@@ -11,6 +11,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
 use futures::stream::StreamExt;
+// import futures filter map 
 
 use log::{debug, warn};
 
@@ -50,10 +51,10 @@ async fn download_tarball(
     url: &str,
     path: &PathBuf,
     mp: &MultiProgress,
-) -> Result<()> {
+) -> Result<bool> {
     if path.exists() {
         debug!("{} already exists, skipping download", path.display());
-        return Ok(());
+        return Ok(false);
     }
 
     // Create a progress bar for the download
@@ -96,7 +97,7 @@ async fn download_tarball(
     } else {
         warn!("Failed to download {}: {}", url, response.status());
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Download the tarballs from the dila server
@@ -106,7 +107,7 @@ async fn download_tarball_list(
     tarballs: &[String],
     dir: &PathBuf,
     base_url: &str,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     if !dir.exists() {
         std::fs::create_dir_all(dir)
             .context(format!("Failed to create directory {}", dir.display()))?;
@@ -123,17 +124,23 @@ async fn download_tarball_list(
             .unwrap_or_else(|| panic!("Failed to get parent directory for {}", path.display()));
         if !pdir.exists() {
             std::fs::create_dir_all(pdir)
-                .context(format!("Failed to create directory {}", pdir.display()))?;
+                .expect("Failed to create directory");
         }
-        Ok(download_tarball(client, &url, &path, &m).await)
+        let result = download_tarball(client, &url, &path, &m).await;
+        match result {
+            Ok(true) => Some(tarball.clone()),
+            _ => None
+        }
     });
 
-    let _results: Vec<Result<Result<()>>> = futures::stream::iter(tasks)
+    let results = futures::stream::iter(tasks)
         .buffer_unordered(10) // Limit the number of concurrent downloads
-        .collect()
+        .filter_map(async |r| r)
+        .collect::<Vec<_>>()
         .await;
 
-    Ok(())
+
+    Ok(results)
 }
 
 pub async fn download_tarballs(
@@ -141,13 +148,13 @@ pub async fn download_tarballs(
     dir: &PathBuf,
     base_url: &str,
 ) -> Result<Vec<String>> {
-    let tarballs = get_tarballs(client, base_url).await?;
+    let tarballs = get_tarballs(client, format!("{}/", base_url).as_str()).await?;
     if tarballs.is_empty() {
         warn!("No tarballs found at {}", base_url);
         return Ok(vec![]);
     }
     debug!("Found {} tarballs", tarballs.len());
-    download_tarball_list(client, &tarballs, dir, base_url).await?;
+    let tarballs = download_tarball_list(client, &tarballs, dir, base_url).await?;
     Ok(tarballs)
 }
 
@@ -169,18 +176,22 @@ pub fn extract_tarball(tarball: &PathBuf, dir: &PathBuf) -> Result<()> {
 }
 
 /// List all files recursively in a directory
-/// and return them as an iterator
-pub fn list_files_in_dir(dir: &PathBuf) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in
-        std::fs::read_dir(dir).context(format!("Failed to read directory {}", dir.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            files.extend(list_files_in_dir(&path)?);
-        } else {
-            files.push(path);
+pub fn list_files_in_dir(dir: PathBuf) -> Result<Vec<PathBuf>> {
+    let mut dir_stack = Vec::new();
+    let mut files    = Vec::new();
+    dir_stack.push(dir);
+    while let Some(current_dir) = dir_stack.pop() {
+        let dir_list = 
+            std::fs::read_dir(&current_dir)
+            .context(format!("Failed to read directory {}", current_dir.display()))?;
+        for entry in dir_list {
+            let entry = entry.expect("Failed to read directory entry");
+            let path = entry.path();
+            if path.is_dir() {
+                dir_stack.push(path);
+            } else {
+                files.push(path);
+            }
         }
     }
     Ok(files)
@@ -412,11 +423,13 @@ struct FondXMLFile {
     year: u64,
 }
 
-fn parse_file(file: &PathBuf, re: &regex::Regex) -> Result<FondXMLFile> {
+fn parse_file(dir: &PathBuf, file: &PathBuf, re: &regex::Regex) -> Result<FondXMLFile> {
     let body = std::fs::read_to_string(file).context("Could not open file")?;
     let year = get_year_juri(&body, re)
         .context(format!("Could not get year in {}", file.to_string_lossy()))?;
-    let path = file.to_string_lossy().to_string();
+    let path = file.strip_prefix(dir)
+        .map_err(|_| anyhow::anyhow!("Failed to strip prefix from {}", file.display()))?
+        .to_string_lossy().to_string();
     Ok(FondXMLFile { path, body, year })
 }
 
@@ -445,14 +458,11 @@ pub fn index_files_in_dir(
     // create a progress bar
     let pb = ProgressBar::new(0);
     let re = regex::Regex::new(r"(?<year>\d*)-\d*-\d*</DATE").unwrap();
-    let files: Vec<PathBuf> = list_files_in_dir(dir)?
+    let files: Vec<PathBuf> = list_files_in_dir(dir.clone())?
         .into_iter()
         .filter(|p| {
-            if let Some(e) = p.extension() {
-                e == "xml"
-            } else {
-                false
-            }
+            p.is_file() && 
+            p.extension().map_or(false, |ext| ext == "xml")
         })
         .collect();
 
@@ -466,7 +476,7 @@ pub fn index_files_in_dir(
     pb.set_message(format!("Indexing {} files", files.len()));
 
     for file in files {
-        if let Ok(doc) = parse_file(&file, &re) {
+        if let Ok(doc) = parse_file(dir, &file, &re) {
             match index_file(index_writer, fields, doc) {
                 Ok(_) => {
                     pb.set_message(format!("Indexed {}", file.display()));
