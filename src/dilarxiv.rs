@@ -193,22 +193,24 @@ fn result_file_to_csv(edir: &PathBuf, result_file: &str, output_file: &str) -> R
     use std::io::BufRead;
 
     let file = std::fs::File::open(result_file)?;
-    let reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::new(file);
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
         .from_path(output_file)?;
 
     let mut tcount = std::collections::HashMap::new();
+    // buffer to allocate file contents
     let mut buffer = String::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        let path = edir.join(line);
+    // buffer to allocate lines 
+    let mut line = String::new(); 
+    while reader.read_line(&mut line)? != 0 {
+        let path = edir.join(&line);
         info!("Processing file: {}", path.display());
         count_tags_in_file(&path, &mut tcount);
         let content = parse_file(&path, &mut buffer);
         writer.serialize(content)?;
         buffer.clear();
+        line.clear();
     }
     writer.flush()?;
 

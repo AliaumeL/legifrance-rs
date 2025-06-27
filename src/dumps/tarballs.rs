@@ -1,4 +1,4 @@
-///
+//
 /// 1. Fetch the tarballs from the dila server (without re-downloading them)
 /// 2. Extract the tarballs in a directory, creating one big archive
 /// 3. Index the content of the XML files remembering aclnofile name
