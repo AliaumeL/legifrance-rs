@@ -35,7 +35,7 @@ pub fn get_tarballs_from_page_content(page: &str) -> Vec<String> {
     names
 }
 
-async fn get_tarballs(client: &Client, url: &str) -> Result<Vec<String>> {
+pub async fn get_tarballs(client: &Client, url: &str) -> Result<Vec<String>> {
     let response = client.get(url).send().await?;
     if response.status().is_success() {
         let body = response.text().await?;
@@ -102,7 +102,7 @@ async fn download_tarball(
 
 /// Download the tarballs from the dila server
 /// if they are not already present
-async fn download_tarball_list(
+pub async fn download_tarball_list(
     client: &Client,
     tarballs: &[String],
     dir: &PathBuf,
@@ -360,8 +360,12 @@ pub struct IndexFields {
     year: tantivy::schema::Field,
 }
 
-pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields)> {
-    use tantivy::Index;
+#[inline(always)]
+fn build_schema_and_tokenizer() -> (
+    tantivy::schema::Schema,
+    tantivy::tokenizer::TextAnalyzer,
+    IndexFields,
+) {
     use tantivy::schema::*;
     use tantivy::tokenizer::*;
 
@@ -386,19 +390,38 @@ pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields
     let year = schema_builder.add_u64_field("year", FAST | INDEXED | STORED);
     let schema = schema_builder.build();
 
+    (schema, tok_fr, IndexFields { path, body, year })
+}
+
+pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields)> {
+    use tantivy::Index;
+
+    let (schema, tokenizer, fields) = build_schema_and_tokenizer();
     // If the index does not exist, create it
     // otherwise open it
     let index = match Index::open_in_dir(index_path) {
         Ok(index) => index,
         Err(_) => {
             // Create the index
-            Index::create_in_dir(index_path, schema.clone())?
+            Index::create_in_dir(index_path, schema)?
         }
     };
 
-    index.tokenizers().register("custom_fr", tok_fr);
+    index.tokenizers().register("custom_fr", tokenizer);
 
-    Ok((index, IndexFields { path, body, year }))
+    Ok((index, fields))
+}
+
+pub fn init_tantivy_ram() -> Result<(tantivy::Index, IndexFields)> {
+    use tantivy::Index;
+
+    let (schema, tokenizer, fields) = build_schema_and_tokenizer();
+
+    // Create the index in RAM
+    let index = Index::create_in_ram(schema);
+    index.tokenizers().register("custom_fr", tokenizer);
+
+    Ok((index, fields))
 }
 
 fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<u64> {

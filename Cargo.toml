@@ -14,6 +14,10 @@ path = "src/dilarxiv.rs"
 name = "dilapi"
 path = "src/dilapi.rs"
 
+[[bin]]
+name = "dilarxiv-oneshot"
+path = "src/dilarxiv-oneshot.rs"
+
 [lib]
 name = "legifrance"
 path = "src/lib.rs"
