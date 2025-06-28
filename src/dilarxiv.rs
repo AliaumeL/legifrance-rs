@@ -201,8 +201,8 @@ fn result_file_to_csv(edir: &PathBuf, result_file: &str, output_file: &str) -> R
     let mut tcount = std::collections::HashMap::new();
     // buffer to allocate file contents
     let mut buffer = String::new();
-    // buffer to allocate lines 
-    let mut line = String::new(); 
+    // buffer to allocate lines
+    let mut line = String::new();
     while reader.read_line(&mut line)? != 0 {
         let path = edir.join(&line);
         info!("Processing file: {}", path.display());
