@@ -14,7 +14,7 @@ use futures::stream::StreamExt;
 
 use log::{debug, warn};
 
-use chrono::NaiveDateTime;
+use chrono::NaiveDate;
 
 use crate::dumps::fonds::Fond;
 
@@ -24,7 +24,7 @@ pub const BASE_URL: &str = "https://echanges.dila.gouv.fr/OPENDATA";
 
 impl From<&Fond> for Url {
     fn from(fond: &Fond) -> Self {
-        let url = format!("{}/{}", BASE_URL, fond.as_str());
+        let url = format!("{}/{}/", BASE_URL, fond.as_str());
         Url::parse(&url).expect("Failed to parse URL")
     }
 }
@@ -35,7 +35,7 @@ impl From<&Fond> for Url {
 pub struct Tarball {
     pub name: String,
     pub fond: Fond,
-    pub time: NaiveDateTime,
+    pub time: NaiveDate,
 }
 
 /// Display implementation for Tarball
@@ -67,22 +67,22 @@ impl AsRef<Path> for Tarball {
 /// where the date is using the Gregorian calendar with paris timezone.
 /// The output is a `NaiveDateTime` representing the date and time
 /// without timezone information.
-fn extract_date_from_tarball_name(name: &str) -> Result<NaiveDateTime> {
-    let date_part = name.split('_').collect::<Vec<_>>().get(1)
-        .context("Failed to extract date from tarball name")?
+fn extract_date_from_tarball_name(name: &str) -> Result<NaiveDate> {
+    debug!("Extracting date from tarball name: {}", name);
+    let date_part = name.split('_').collect::<Vec<_>>()
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Failed to extract date part from tarball name"))?
         .split('-')
         .next()
         .ok_or_else(|| anyhow::anyhow!("Failed to extract date part from tarball name"))?;
 
+    debug!("Date part extracted: {}", date_part);
 
-    use chrono::DateTime;
-    use chrono_tz::Europe::Paris;
-    // parse Paris time date 
-    let dt = DateTime::parse_from_str(date_part, "%Y%m%d")
-        .context(format!("Failed to parse date from tarball name: {}", name))?;
-    // convert to NaiveDateTime using the Paris timezone
-    let naive_dt = dt.with_timezone(&Paris).naive_utc();
-    Ok(naive_dt)
+    use chrono::NaiveDate;
+    let dt = NaiveDate::parse_from_str(date_part, "%Y%m%d")
+        .expect("Failed to parse date from tarball name");
+    debug!("DateTime parsed: {}", dt);
+    Ok(dt)
 }
 
 /// List all tarballs in the dila server that are listed
@@ -91,6 +91,7 @@ pub fn get_tarballs_from_page_content(fond : &Fond, content: &str) -> Vec<Tarbal
     // fetch all strings matching the regex
     // \w*-\w*.tar.gz
     // and return them
+    debug!("Extracting tarballs from content for fond: {}", fond);
     let re = regex::Regex::new(r"\w*-\w*.tar.gz").unwrap();
     let mut names: Vec<String> = re
         .captures_iter(content)

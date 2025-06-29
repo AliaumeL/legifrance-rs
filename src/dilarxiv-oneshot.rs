@@ -11,13 +11,15 @@
 use clap::Parser;
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use log::{error, info};
+use log::{error, info, debug};
 
 use temp_dir::TempDir;
+
+use std::io::BufWriter;
 
 use legifrance::dumps::extractor::{count_tags_in_file, parse_file};
 use legifrance::dumps::fonds::{FONDS, Fond};
@@ -41,10 +43,23 @@ struct Cli {
     to_csv: String,
 }
 
-fn result_file_to_csv(edir: &PathBuf, result_file: &PathBuf, output_file: &str) -> Result<()> {
+fn result_file_to_csv<T>(edir: &PathBuf, result_file: T, output_file: T) -> Result<()>
+where
+    T: AsRef<Path>,
+{
     use std::io::BufRead;
 
-    let file = std::fs::File::open(result_file)?;
+    info!("Converting result file to CSV: {}", output_file.as_ref().display());
+
+    // open the resulting file, create it if it does not exist, erase
+    // it if it did
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .append(false)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(result_file)?;
     let mut reader = std::io::BufReader::new(file);
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
@@ -99,12 +114,22 @@ async fn main() {
     std::fs::create_dir(results_dir.as_path()).expect("Failed to create results directory");
 
     let result_file = tmpdir.join("results.txt");
+    let result_tmp = tmpdir.join("results_tmp.txt");
 
     let result_file_out = Some(
-        result_file
+        result_tmp
             .to_str()
             .expect("Failed to convert path to string")
             .to_string(),
+    );
+    let mut result_file_final = BufWriter::new(
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .append(false)
+            .create(true)
+            .open(&result_file)
+            .expect("Failed to open result file"),
     );
 
     info!("Created all temporary directories");
@@ -196,6 +221,7 @@ async fn main() {
         tarballs::index_files_in_dir(&mut writer, &flds, &extract_dir)
             .expect("Failed to index files");
 
+        
         info!("Indexed all the files");
 
         // commit the writer
@@ -212,18 +238,32 @@ async fn main() {
         }
         info!("Search results written to {}", result_file.display());
 
+        debug!("Copying results to final result file");
+        std::io::copy(
+            &mut std::fs::File::open(&result_tmp).expect("Failed to open result file"),
+            &mut result_file_final,
+        )
+            .expect("Failed to copy result file");
+
+
         // move the results of the search to the "results" directory
         // this is done by reading all the lines in the
         // `result_file` and performing std::fs operations
-        let results = std::fs::read_to_string(&result_file).expect("Failed to read results file");
+
+        let results = std::fs::read_to_string(&result_tmp)
+            .expect("Failed to read results file");
 
         for line in results.lines() {
             let infile = extract_dir.join(line);
             let outfile = results_dir.join(line);
+
+            debug!("Moving file from {} to {}", infile.display(), outfile.display());
             // create the parent directory if it doesn't exist
             if let Some(parent) = outfile.parent() {
+                debug!("Creating parent directory: {}", parent.display());
                 std::fs::create_dir_all(parent).expect("Failed to create parent directory");
             }
+
             // move the file
             std::fs::rename(&infile, &outfile).expect("Failed to move file");
         }
@@ -233,21 +273,27 @@ async fn main() {
         std::fs::remove_dir_all(extract_dir.as_path()).expect("Failed to remove directory");
 
         // recreate them immediately
-        std::fs::create_dir(dl_dir.as_path()).expect("Failed to create download directory");
-        std::fs::create_dir(extract_dir.as_path()).expect("Failed to create extract directory");
+        std::fs::create_dir_all(dl_dir.as_path()).expect("Failed to create download directory");
+        std::fs::create_dir_all(extract_dir.as_path()).expect("Failed to create extract directory");
 
         // clear the index
         writer
             .delete_all_documents()
             .expect("Failed to delete all documents");
         writer.commit().expect("Failed to commit writer");
+
+        // clear the result file
+        std::fs::remove_file(&result_tmp)
+            .expect("Failed to remove temporary result file");
+
+
         pb.inc(chunk.len() as u64);
     }
     pb.finish_with_message("All tarballs processed");
 
     info!("All tarballs processed, moving results to CSV");
 
-    result_file_to_csv(&results_dir, &result_file, &args.to_csv)
+    result_file_to_csv(&results_dir, result_file.as_path(), args.to_csv.as_ref())
         .expect("Failed to convert result file to CSV");
 
     info!("Results exported to {}", args.to_csv);
