@@ -33,8 +33,11 @@ impl From<&Fond> for Url {
 /// They are attached to a specific `fond`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tarball {
+    /// Tarball name, typically of the form FOND_YYYYMMDD-XXXXX.tar.gz
     pub name: String,
+    /// Fond to which this tarball belongs
     pub fond: Fond,
+    /// Date of the tarball, extracted from the name
     pub time: NaiveDate,
 }
 
@@ -178,7 +181,7 @@ async fn download_tarball(
 
 /// Download the tarballs from the dila server
 /// if they are not already present
-pub async fn download_tarball_list<'a>(
+pub async fn download_tarball_list(
     client: &Client,
     tarballs: &[Tarball],
     dir: &PathBuf,
