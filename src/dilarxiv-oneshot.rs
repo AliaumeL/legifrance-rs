@@ -123,16 +123,10 @@ async fn main() {
         .filter_map(|fond| {
             let client = client.clone();
             async move {
-                let url = format!("{}/{}", tarballs::BASE_URL, fond);
-                match tarballs::get_tarballs(&client, &url).await {
+                match tarballs::list_tarballs(&client, fond).await {
                     Ok(tarballs) => {
                         info!("Found {} tarballs for {}", tarballs.len(), fond);
-                        Some(async move {
-                            tarballs
-                                .into_iter()
-                                .map(|tb| format!("{}/{}", fond, tb))
-                                .collect::<Vec<_>>()
-                        })
+                        Some(async move { tarballs })
                     }
                     Err(e) => {
                         error!("Failed to download tarballs for {}: {}", fond, e);
@@ -172,10 +166,8 @@ async fn main() {
     // download + extract them in parallel
     for chunk in strm.chunks(10) {
         pb.set_message(format!("Processing {} tarballs", chunk.len()));
-
-        info!("Processing {} tarballs", chunk.join(", "));
         // this download happens in parallel
-        let tblist = tarballs::download_tarball_list(&client, chunk, &dl_dir, tarballs::BASE_URL)
+        let tblist = tarballs::download_tarball_list(&client, chunk, &dl_dir)
             .await
             .expect("Failed to download tarballs");
 
