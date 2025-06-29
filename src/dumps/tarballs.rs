@@ -655,6 +655,28 @@ mod tests {
 "#;
 
     #[test]
+    fn test_date_parsing() {
+        use chrono::Datelike;
+        let name = "CASS_20231125-130812.tar.gz";
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 25);
+        assert_eq!(date.month(), 11);
+        assert_eq!(date.year(), 2023);
+
+        let name = "CASS_20240101-200918.tar.gz";
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 1);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.year(), 2024);
+
+        let name = "Freemium_jorf_global_20231119-100000.tar.gz"; 
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 19);
+        assert_eq!(date.month(), 11);
+        assert_eq!(date.year(), 2023);
+    }
+
+    #[test]
     fn test_get_tarballs_from_page_content() {
         use chrono::Datelike;
         let tarballs = get_tarballs_from_page_content(&Fond::CASS, MOCK_CASS_CONTENT);
