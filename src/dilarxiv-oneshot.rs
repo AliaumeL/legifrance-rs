@@ -21,9 +21,12 @@ use temp_dir::TempDir;
 
 use std::io::BufWriter;
 
-use legifrance::dumps::extractor::{count_tags_in_file, parse_file};
+use legifrance::dumps::extractor::parse_file;
 use legifrance::dumps::fonds::{FONDS, Fond};
 use legifrance::dumps::tarballs;
+
+use legifrance::dumps::extractor::PreDilaText;
+
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -43,6 +46,65 @@ struct Cli {
     to_csv: String,
 }
 
+/// create workers that will read and 
+/// process files in parallel.
+/// This creates `num_threads` threads, and returns their handles 
+/// together with channels to communicate with them
+fn span_parser_threads(
+    num_threads : usize,
+    writer_channel: &std::sync::mpsc::Sender<PreDilaText>,
+    ) -> Vec<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<PathBuf>)> {
+    use std::thread;
+    use std::sync::mpsc;
+
+    info!("Using {} worker threads", num_threads);
+
+    (0..num_threads)
+        .map(|_| {
+            let (thread_tx, thread_rx) = mpsc::channel();
+            let writer_channel = writer_channel.clone();
+            let handle = thread::spawn(move || {
+                let mut file_buffer = String::new();
+                // This is a placeholder for any work that needs to be done
+                // in the worker threads. In this case, we do nothing.
+                while let Ok(file_path) = thread_rx.recv() {
+                    let content = parse_file(file_path, &mut file_buffer);
+                    writer_channel
+                        .send(content)
+                        .expect("Failed to send content to writer channel");
+                    file_buffer.clear();
+                }
+            });
+            (handle, thread_tx)
+        })
+        .collect()
+}
+
+fn spawn_writer_thread<T>(file_path : T) -> (std::thread::JoinHandle<()>, std::sync::mpsc::Sender<PreDilaText>)
+    where 
+        T : AsRef<Path>
+{
+    use std::thread;
+    use std::sync::mpsc;
+
+    let mut writer = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_path(file_path)
+        .expect("Failed to create CSV writer");
+
+    let (writer_tx, writer_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        while let Ok(row) = writer_rx.recv(){
+            info!("Writing row to CSV: {:?}", row);
+            writer.serialize(row)
+                .expect("Failed to write row to CSV");
+        }
+        info!("Flushing CSV writer");
+        writer.flush().expect("Failed to flush CSV writer");
+    });
+    (handle, writer_tx)
+}
+
 fn result_file_to_csv<T>(edir: &PathBuf, result_file: T, output_file: T) -> Result<()>
 where
     T: AsRef<Path>,
@@ -60,31 +122,37 @@ where
         .create(true)
         .truncate(true)
         .open(result_file)?;
-    let mut reader = std::io::BufReader::new(file);
-    let mut writer = csv::WriterBuilder::new()
-        .has_headers(true)
-        .from_path(output_file)?;
 
-    let mut tcount = std::collections::HashMap::new();
-    // buffer to allocate file contents
-    let mut buffer = String::new();
+    let mut reader = std::io::BufReader::new(file);
     // buffer to allocate lines
     let mut line = String::new();
+
+    let (writer_handle, writer_channel) = spawn_writer_thread(output_file);
+    let parsers = span_parser_threads(5, &writer_channel);
+
+    let mut i = 0;
     while reader.read_line(&mut line)? != 0 {
         let path = edir.join(&line);
-        info!("Processing file: {}", path.display());
-        count_tags_in_file(&path, &mut tcount);
-        let content = parse_file(&path, &mut buffer);
-        writer.serialize(content)?;
-        buffer.clear();
+        if let Some((_, tx)) = parsers.get(i % parsers.len()) {
+            // send the path to the worker thread
+            tx.send(path).expect("Failed to send path to worker thread");
+        } else {
+            error!("No worker thread available to process file: {}", path.display());
+        }
+        i += 1;
+        // clear the line buffer for the next iteration
         line.clear();
     }
-    writer.flush()?;
 
-    println!("Found {} tags", tcount.len());
-    for (tag, count) in tcount {
-        println!("{}: {}", tag, count);
+    // wait for everyone to finish
+    for (handle, tx) in parsers {
+        handle.join().expect("Failed to join parser thread");
+        drop(tx);
     }
+    writer_handle.join().expect("Failed to join writer thread");
+    drop(writer_channel);
+    info!("All worker threads finished processing");
+
     Ok(())
 }
 
@@ -172,7 +240,7 @@ async fn main() {
 
     let (index, flds) = tarballs::init_tantivy_ram().expect("Failed to create index");
 
-    let mut writer = index.writer(50_000_000).expect("Failed to create writer");
+    let mut writer = index.writer(100_000_000).expect("Failed to create writer");
 
     info!("Prepared the index and writer");
 
@@ -212,7 +280,6 @@ async fn main() {
             .collect::<Vec<_>>()
             .await;
 
-        // breakpoint (ask for user input)
         info!("Extracted tarballs from {}", dl_dir.display());
         info!("Extracted to {}", extract_dir.display());
 
@@ -220,7 +287,6 @@ async fn main() {
         // (sequentially)
         tarballs::index_files_in_dir(&mut writer, &flds, &extract_dir)
             .expect("Failed to index files");
-
         
         info!("Indexed all the files");
 
@@ -239,6 +305,7 @@ async fn main() {
         info!("Search results written to {}", result_file.display());
 
         debug!("Copying results to final result file");
+        // we should be `appending` results here...
         std::io::copy(
             &mut std::fs::File::open(&result_tmp).expect("Failed to open result file"),
             &mut result_file_final,
@@ -285,7 +352,6 @@ async fn main() {
         // clear the result file
         std::fs::remove_file(&result_tmp)
             .expect("Failed to remove temporary result file");
-
 
         pb.inc(chunk.len() as u64);
     }
