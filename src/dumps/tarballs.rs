@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use futures::stream::StreamExt;
 
 use log::{debug, warn};
+use serde::{Serialize, Deserialize};
 
 use chrono::NaiveDate;
 
@@ -31,7 +32,7 @@ impl From<&Fond> for Url {
 
 /// A tarball is a compressed archive that is stored in the dila servers.
 /// They are attached to a specific `fond`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tarball {
     /// Tarball name, typically of the form FOND_YYYYMMDD-XXXXX.tar.gz
     pub name: String,
@@ -641,6 +642,30 @@ pub fn search_index(
     }
     Ok((doc_count, results))
 }
+
+
+/// Query plans and reproducibility guarantees
+///
+/// TODO: this is somehow incompatible with the 
+/// `threading` and optimisations that improve
+/// performance: they do not guarantee reproducibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct QueryPlan {
+    /// The fonds to query
+    fonds:         Vec<Fond>,
+    /// The actual query to execute
+    query:         String,
+    /// All the archives that were used to execute the query
+    archives:      Vec<Tarball>,
+    /// The hash of the `result` file, containing the list of all
+    /// documents matching the query. SORTED?
+    result_files_hash: String,
+    /// The hash of the resulting CSV file, containing
+    /// parsed content of the result files. SORTED?
+    result_csv_hash:  String
+}
+
+
 
 #[cfg(test)]
 mod tests {

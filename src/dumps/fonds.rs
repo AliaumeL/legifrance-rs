@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Fond {
     JORF,
     CNIL,
