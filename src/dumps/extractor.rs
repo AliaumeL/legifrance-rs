@@ -253,12 +253,14 @@ fn reader_to_pre_dila(r: &mut Reader<&[u8]>) -> PreDilaText {
 
 /// This function reads from a io::Read and returns a PreDilaText struct
 /// with the metadata and text of the decision.
-pub fn parse_file(file: &PathBuf, buf: &mut String) -> PreDilaText {
+pub fn parse_file<T>(file: T, buf: &mut String) -> PreDilaText 
+where 
+    T: AsRef<std::path::Path>
+{
     use std::fs::File;
     use std::io::Read;
-    use std::path::PathBuf;
 
-    let file = PathBuf::from(file);
+    let file = file.as_ref();
     if !file.exists() {
         panic!("File does not exist: {}", file.display());
     }

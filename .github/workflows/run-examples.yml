@@ -24,13 +24,15 @@ jobs:
         run: |
           ls -lah
           chmod +x dilarxiv 
+          chmod +x dilarxiv-oneshot
           chmod +x dilapi
           chmod +x ./examples/ceseda.sh
+          chmod +x ./examples/ceseda-oneshot.sh
       - name: Run example
         run: |
           # update path to contain the downloaded binaries
           export PATH=$PATH:$(pwd)
-          ./examples/ceseda.sh
+          ./examples/ceseda-oneshot.sh
       - name: Upload example dataset
         uses: actions/upload-artifact@v4
         with:
