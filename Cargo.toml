@@ -14,12 +14,17 @@ path = "src/dilarxiv.rs"
 name = "dilapi"
 path = "src/dilapi.rs"
 
+[[bin]]
+name = "dilarxiv-oneshot"
+path = "src/dilarxiv-oneshot.rs"
+
 [lib]
 name = "legifrance"
 path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.97"
+chrono = { version = "0.4.41", features = ["serde"] }
 clap = { version = "4.5.35", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 csv = "1.3.1"
@@ -46,6 +51,3 @@ strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
-
-[dev-dependencies]
-wiremock = "0.6.3"

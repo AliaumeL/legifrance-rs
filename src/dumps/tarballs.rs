@@ -5,57 +5,137 @@
 /// 4. Answer queries on the database like: what are the files
 ///    matching some fulltext query
 use anyhow::{Context, Result};
-use reqwest::Client;
+use reqwest::{Url, Client};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use futures::stream::StreamExt;
-// import futures filter map
 
 use log::{debug, warn};
+use serde::{Serialize, Deserialize};
+
+use chrono::NaiveDate;
+
+use crate::dumps::fonds::Fond;
 
 /// Base URL for the dila server
 pub const BASE_URL: &str = "https://echanges.dila.gouv.fr/OPENDATA";
 
+
+impl From<&Fond> for Url {
+    fn from(fond: &Fond) -> Self {
+        let url = format!("{}/{}/", BASE_URL, fond.as_str());
+        Url::parse(&url).expect("Failed to parse URL")
+    }
+}
+
+/// A tarball is a compressed archive that is stored in the dila servers.
+/// They are attached to a specific `fond`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tarball {
+    /// Tarball name, typically of the form FOND_YYYYMMDD-XXXXX.tar.gz
+    pub name: String,
+    /// Fond to which this tarball belongs
+    pub fond: Fond,
+    /// Date of the tarball, extracted from the name
+    pub time: NaiveDate,
+}
+
+/// Display implementation for Tarball
+impl std::fmt::Display for Tarball {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}_{}", self.fond.as_str(), self.name)
+    }
+}
+
+/// Convert from a Tarball into a URL
+/// pointing to that tarball on the dila server.
+impl From<&Tarball> for Url {
+    fn from(tarball: &Tarball) -> Self {
+        let url = format!("{}/{}/{}", BASE_URL, tarball.fond.as_str(), tarball.name);
+        Url::parse(&url).expect("Failed to parse URL")
+    }
+}
+
+/// A tarball can naturally be seen as a path 
+/// from its name, allowing us to download it
+impl AsRef<Path> for Tarball {
+    fn as_ref(&self) -> &Path {
+        self.name.as_ref()
+    }
+}
+
+/// Extract the date from a tarball name as a `NaiveDateTime`.
+/// The tarball names are of the form FOND_YYYYMMDD-XXXXX.tar.gz
+/// where the date is using the Gregorian calendar with paris timezone.
+/// The output is a `NaiveDateTime` representing the date and time
+/// without timezone information.
+fn extract_date_from_tarball_name(name: &str) -> Result<NaiveDate> {
+    debug!("Extracting date from tarball name: {}", name);
+    let date_part = name.split('_').collect::<Vec<_>>()
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Failed to extract date part from tarball name"))?
+        .split('-')
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Failed to extract date part from tarball name"))?;
+
+    debug!("Date part extracted: {}", date_part);
+
+    use chrono::NaiveDate;
+    let dt = NaiveDate::parse_from_str(date_part, "%Y%m%d")
+        .expect("Failed to parse date from tarball name");
+    debug!("DateTime parsed: {}", dt);
+    Ok(dt)
+}
+
 /// List all tarballs in the dila server that are listed
 /// in the page content given as a string
-pub fn get_tarballs_from_page_content(page: &str) -> Vec<String> {
+pub fn get_tarballs_from_page_content(fond : &Fond, content: &str) -> Vec<Tarball> {
     // fetch all strings matching the regex
     // \w*-\w*.tar.gz
     // and return them
+    debug!("Extracting tarballs from content for fond: {}", fond);
     let re = regex::Regex::new(r"\w*-\w*.tar.gz").unwrap();
     let mut names: Vec<String> = re
-        .captures_iter(page)
+        .captures_iter(content)
         .filter_map(|cap| cap.get(0))
         .map(|m| m.as_str().to_string())
         .collect();
     names.sort();
     names.dedup();
-    names
+    names.into_iter()
+        .filter_map(|name| {
+            let time = extract_date_from_tarball_name(&name).ok()?;
+            Some(Tarball { name, fond: fond.clone(), time })
+        })
+        .collect()
 }
 
-async fn get_tarballs(client: &Client, url: &str) -> Result<Vec<String>> {
+pub async fn list_tarballs(client: &Client, fond: &Fond) -> Result<Vec<Tarball>> {
+    let url : Url = fond.into();
     let response = client.get(url).send().await?;
     if response.status().is_success() {
         let body = response.text().await?;
-        Ok(get_tarballs_from_page_content(&body))
+        Ok(get_tarballs_from_page_content(fond, &body))
     } else {
-        warn!("Failed to fetch tarballs from {}", url);
-        Ok(vec![])
+        warn!("Failed to fetch tarballs from {}", fond);
+        Err(anyhow::anyhow!("Failed to fetch tarballs from {}", fond))
     }
 }
 
 async fn download_tarball(
     client: &Client,
-    url: &str,
-    path: &PathBuf,
+    outdir: &PathBuf,
+    tarball: &Tarball,
     mp: &MultiProgress,
 ) -> Result<bool> {
+    let path = outdir.join(tarball);
     if path.exists() {
         debug!("{} already exists, skipping download", path.display());
         return Ok(false);
     }
+    let url : Url = tarball.into();
 
     // Create a progress bar for the download
     let pb = mp.add(ProgressBar::new(0));
@@ -73,7 +153,7 @@ async fn download_tarball(
     }
 
     if response.status().is_success() {
-        let mut file = tokio::fs::File::create(path)
+        let mut file = tokio::fs::File::create(path.as_path())
             .await
             .context(format!("Failed to create file {}", path.display()))?;
         let mut buf_writer = tokio::io::BufWriter::new(&mut file);
@@ -89,25 +169,24 @@ async fn download_tarball(
                         .context(format!("Failed to copy bytes to {}", path.display()))?;
                 }
                 Err(e) => {
-                    warn!("Error downloading {}: {}", url, e);
+                    warn!("Error downloading {}: {}", tarball, e);
                     return Err(e.into());
                 }
             }
         }
     } else {
-        warn!("Failed to download {}: {}", url, response.status());
+        warn!("Failed to download {}: {}", tarball, response.status());
     }
     Ok(true)
 }
 
 /// Download the tarballs from the dila server
 /// if they are not already present
-async fn download_tarball_list(
+pub async fn download_tarball_list(
     client: &Client,
-    tarballs: &[String],
+    tarballs: &[Tarball],
     dir: &PathBuf,
-    base_url: &str,
-) -> Result<Vec<String>> {
+) -> Result<Vec<Tarball>> {
     if !dir.exists() {
         std::fs::create_dir_all(dir)
             .context(format!("Failed to create directory {}", dir.display()))?;
@@ -116,16 +195,8 @@ async fn download_tarball_list(
     // Create a multi-progress bar
     let m = MultiProgress::new();
 
-    let tasks = tarballs.iter().map(async |tarball| {
-        let url = format!("{}/{}", base_url, tarball);
-        let path = dir.join(tarball);
-        let pdir = path
-            .parent()
-            .unwrap_or_else(|| panic!("Failed to get parent directory for {}", path.display()));
-        if !pdir.exists() {
-            std::fs::create_dir_all(pdir).expect("Failed to create directory");
-        }
-        let result = download_tarball(client, &url, &path, &m).await;
+    let tasks = tarballs.into_iter().map(async |tarball| {
+        let result = download_tarball(client, dir, &tarball, &m).await;
         match result {
             Ok(true) => Some(tarball.clone()),
             _ => None,
@@ -144,15 +215,15 @@ async fn download_tarball_list(
 pub async fn download_tarballs(
     client: &Client,
     dir: &PathBuf,
-    base_url: &str,
-) -> Result<Vec<String>> {
-    let tarballs = get_tarballs(client, format!("{}/", base_url).as_str()).await?;
+    fond: &Fond,
+) -> Result<Vec<Tarball>> {
+    let tarballs = list_tarballs(client, fond).await?;
     if tarballs.is_empty() {
-        warn!("No tarballs found at {}", base_url);
+        warn!("No tarballs found at {}", fond);
         return Ok(vec![]);
     }
     debug!("Found {} tarballs", tarballs.len());
-    let tarballs = download_tarball_list(client, &tarballs, dir, base_url).await?;
+    let tarballs = download_tarball_list(client, &tarballs, dir).await?;
     Ok(tarballs)
 }
 
@@ -360,8 +431,12 @@ pub struct IndexFields {
     year: tantivy::schema::Field,
 }
 
-pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields)> {
-    use tantivy::Index;
+#[inline(always)]
+fn build_schema_and_tokenizer() -> (
+    tantivy::schema::Schema,
+    tantivy::tokenizer::TextAnalyzer,
+    IndexFields,
+) {
     use tantivy::schema::*;
     use tantivy::tokenizer::*;
 
@@ -386,19 +461,38 @@ pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields
     let year = schema_builder.add_u64_field("year", FAST | INDEXED | STORED);
     let schema = schema_builder.build();
 
+    (schema, tok_fr, IndexFields { path, body, year })
+}
+
+pub fn init_tantivy(index_path: &PathBuf) -> Result<(tantivy::Index, IndexFields)> {
+    use tantivy::Index;
+
+    let (schema, tokenizer, fields) = build_schema_and_tokenizer();
     // If the index does not exist, create it
     // otherwise open it
     let index = match Index::open_in_dir(index_path) {
         Ok(index) => index,
         Err(_) => {
             // Create the index
-            Index::create_in_dir(index_path, schema.clone())?
+            Index::create_in_dir(index_path, schema)?
         }
     };
 
-    index.tokenizers().register("custom_fr", tok_fr);
+    index.tokenizers().register("custom_fr", tokenizer);
 
-    Ok((index, IndexFields { path, body, year }))
+    Ok((index, fields))
+}
+
+pub fn init_tantivy_ram() -> Result<(tantivy::Index, IndexFields)> {
+    use tantivy::Index;
+
+    let (schema, tokenizer, fields) = build_schema_and_tokenizer();
+
+    // Create the index in RAM
+    let index = Index::create_in_ram(schema);
+    index.tokenizers().register("custom_fr", tokenizer);
+
+    Ok((index, fields))
 }
 
 fn get_year_juri(doc: &str, re: &regex::Regex) -> Result<u64> {
@@ -549,12 +643,10 @@ pub fn search_index(
     Ok((doc_count, results))
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const MOCK_CASS_CONTENT: &str = r#"
 <img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20231125-130812.tar.gz">CASS_20231125-130812.tar.gz</a>                 2023-11-25 15:04  261K  
@@ -567,28 +659,38 @@ mod tests {
 <img src="/icons/compressed.gif" alt="[   ]"> <a href="CASS_20240115-204455.tar.gz">CASS_20240115-204455.tar.gz</a>                 2024-01-15 20:47  306K
 "#;
 
-    async fn setup_mock_server() -> MockServer {
-        let mock_server = MockServer::start().await;
+    #[test]
+    fn test_date_parsing() {
+        use chrono::Datelike;
+        let name = "CASS_20231125-130812.tar.gz";
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 25);
+        assert_eq!(date.month(), 11);
+        assert_eq!(date.year(), 2023);
 
-        Mock::given(method("GET"))
-            .and(path("/CASS"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string(MOCK_CASS_CONTENT.to_string())
-                    .append_header("Content-Type", "text/html"),
-            )
-            // Mounting the mock on the mock server - it's now effective!
-            .mount(&mock_server)
-            .await;
+        let name = "CASS_20240101-200918.tar.gz";
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 1);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.year(), 2024);
 
-        mock_server
+        let name = "Freemium_jorf_global_20231119-100000.tar.gz"; 
+        let date = extract_date_from_tarball_name(name).unwrap();
+        assert_eq!(date.day(), 19);
+        assert_eq!(date.month(), 11);
+        assert_eq!(date.year(), 2023);
     }
 
     #[test]
     fn test_get_tarballs_from_page_content() {
-        let tarballs = get_tarballs_from_page_content(MOCK_CASS_CONTENT);
+        use chrono::Datelike;
+        let tarballs = get_tarballs_from_page_content(&Fond::CASS, MOCK_CASS_CONTENT);
         assert_eq!(tarballs.len(), 8);
-        assert_eq!(tarballs[0], "CASS_20231125-130812.tar.gz");
+        assert_eq!(tarballs[0].name, "CASS_20231125-130812.tar.gz");
+        assert_eq!(tarballs[0].fond, Fond::CASS);
+        assert_eq!(tarballs[0].time.day(), 25);
+        assert_eq!(tarballs[0].time.month(), 11);
+        assert_eq!(tarballs[0].time.year(), 2023);
     }
 
     #[test]
@@ -599,15 +701,4 @@ mod tests {
         assert_eq!(year, 2023);
     }
 
-    #[tokio::test]
-    async fn test_get_tarballs() {
-        use crate::dumps::fonds::Fond;
-
-        let mock_server = setup_mock_server().await;
-        let url = format!("{}/{}", mock_server.uri(), Fond::CASS);
-        let client = Client::new();
-        let tarballs = get_tarballs(&client, &url).await.unwrap();
-        assert_eq!(tarballs.len(), 8);
-        assert_eq!(tarballs[0], "CASS_20231125-130812.tar.gz");
-    }
 }

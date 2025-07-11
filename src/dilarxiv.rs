@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -9,7 +9,7 @@ use log::{error, info, warn};
 
 use legifrance::dumps::extractor::{count_tags_in_file, parse_file};
 use legifrance::dumps::fonds::{FONDS, Fond};
-use legifrance::dumps::tarballs;
+use legifrance::dumps::tarballs::{self, Tarball};
 
 async fn update_and_index_data(
     fonds: &[Fond],
@@ -30,8 +30,10 @@ async fn update_and_index_data(
     }
     info!("Downloaded {} tarballs", tb.len());
 
+    let paths = tb.iter().map(|t| t.as_ref()).collect::<Vec<_>>();
+
     // Extract the tarballs
-    extract_tarballs(tdir, &tb, tmpd).context("Failed to extract tarballs")?;
+    extract_tarballs(tdir, &paths, tmpd).context("Failed to extract tarballs")?;
 
     // create the index
     let (index, flds) = tarballs::init_tantivy(&idir).expect("Failed to create index");
@@ -120,7 +122,7 @@ struct Cli {
     csv: Option<String>,
 }
 
-async fn get_tarballs(fonds: &[Fond], dir: &PathBuf) -> Result<Vec<String>> {
+async fn get_tarballs(fonds: &[Fond], dir: &PathBuf) -> Result<Vec<Tarball>> {
     // Create a new HTTP client
     let client = reqwest::Client::new();
 
@@ -128,9 +130,8 @@ async fn get_tarballs(fonds: &[Fond], dir: &PathBuf) -> Result<Vec<String>> {
 
     for fond in fonds {
         info!("Downloading tarballs for {}", fond);
-        let url = format!("{}/{}", tarballs::BASE_URL, fond);
         // Download the tarballs
-        match tarballs::download_tarballs(&client, dir, &url).await {
+        match tarballs::download_tarballs(&client, dir, fond).await {
             Ok(tarballs_list) => {
                 tarballs.extend(tarballs_list);
             }
@@ -144,17 +145,16 @@ async fn get_tarballs(fonds: &[Fond], dir: &PathBuf) -> Result<Vec<String>> {
     Ok(tarballs)
 }
 
-fn list_all_tarballs(idir: &PathBuf) -> Result<Vec<String>> {
+fn list_all_tarballs(idir: &PathBuf) -> Result<Vec<PathBuf>> {
     let tbfiles = std::fs::read_dir(idir)?;
     let to_extract: Vec<_> = tbfiles
         .into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            let name = path.file_name()?.to_str()?;
             let ext = path.extension()?.to_str()?;
             if path.is_file() && (ext == "tar.gz" || ext == "gz") {
-                Some(name.to_string())
+                Some(path)
             } else {
                 None
             }
@@ -164,7 +164,10 @@ fn list_all_tarballs(idir: &PathBuf) -> Result<Vec<String>> {
     Ok(to_extract)
 }
 
-fn extract_tarballs(idir: &PathBuf, to_extract: &[String], odir: &PathBuf) -> Result<()> {
+fn extract_tarballs<T>(idir: &PathBuf, to_extract: &[T], odir: &PathBuf) -> Result<()>
+where
+    T: AsRef<Path>
+{
     let pb = ProgressBar::new(to_extract.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -174,7 +177,7 @@ fn extract_tarballs(idir: &PathBuf, to_extract: &[String], odir: &PathBuf) -> Re
     );
 
     for p in to_extract {
-        pb.set_message(format!("Extracting {}", p));
+        pb.set_message(format!("Extracting {}", p.as_ref().display()));
         let path = idir.join(p);
         if path.exists() {
             match tarballs::extract_tarball(&path, &odir) {
