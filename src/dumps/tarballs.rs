@@ -644,29 +644,6 @@ pub fn search_index(
 }
 
 
-/// Query plans and reproducibility guarantees
-///
-/// TODO: this is somehow incompatible with the 
-/// `threading` and optimisations that improve
-/// performance: they do not guarantee reproducibility
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct QueryPlan {
-    /// The fonds to query
-    fonds:         Vec<Fond>,
-    /// The actual query to execute
-    query:         String,
-    /// All the archives that were used to execute the query
-    archives:      Vec<Tarball>,
-    /// The hash of the `result` file, containing the list of all
-    /// documents matching the query. SORTED?
-    result_files_hash: String,
-    /// The hash of the resulting CSV file, containing
-    /// parsed content of the result files. SORTED?
-    result_csv_hash:  String
-}
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
