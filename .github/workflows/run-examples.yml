@@ -18,7 +18,7 @@ jobs:
         with:
           latest: true
           extract: true
-          fileName: "*linux*"
+          fileName: "*x86*linux*"
           repository: "AliaumeL/legifrance-rs"
       - name: Allow execution
         run: |
